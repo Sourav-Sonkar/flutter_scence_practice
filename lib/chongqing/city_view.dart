@@ -11,6 +11,7 @@ import 'package:vector_math/vector_math.dart' as vm;
 import 'city_data.dart';
 import 'city_look.dart';
 import 'clouds.dart';
+import 'detail_chunks.dart';
 import 'district_scene.dart';
 import 'street_lamps.dart' show RainPainter;
 import 'facade_textures.dart';
@@ -365,6 +366,7 @@ class _CityViewState extends State<CityView> {
     );
     _look.update(_sky, _hour.value);
     if (_painted) _paintedLook?.update(_sky, _hour.value);
+    DetailChunks.setNightGlow(_sky.night);
     _pushSkyParams();
   }
 

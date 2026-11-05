@@ -1302,11 +1302,20 @@
   "streetLamp",
   "crown",
   "powerPole",
-  "wire"
+  "wire",
+  "awningRed",
+  "awningTeal",
+  "awningCream",
+  "signRed",
+  "signYellow",
+  "signBlue",
+  "laundryLight",
+  "laundryColour",
+  "lantern"
  ],
  "details": {
   "offset": 2518784,
-  "count": 14458
+  "count": 16406
  },
  "walk": {
   "walls": {
@@ -18105,6 +18114,15 @@
   "bridge planters": 910,
   "power poles": 945,
   "wire spans": 711,
+  "street life awningRed": 60,
+  "street life signRed": 62,
+  "street life laundryColour": 147,
+  "street life laundryLight": 141,
+  "street life awningTeal": 68,
+  "street life signBlue": 66,
+  "street life signYellow": 70,
+  "street life awningCream": 63,
+  "street life lantern": 1271,
   "boat lanes": 4
  }
 }

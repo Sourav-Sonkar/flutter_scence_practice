@@ -297,6 +297,24 @@ class DetailChunks {
     );
   }();
 
+  /// Materials that glow at night (shop signs, lanterns).
+  static final List<PhysicallyBasedMaterial> glowing = [];
+
+  static PhysicallyBasedMaterial _glow(double r, double g, double b) {
+    final m = _mat(r, g, b, rough: 0.6);
+    glowing.add(m);
+    return m;
+  }
+
+  /// Lights signs and lanterns as [night] goes from 0 (day) to 1 (night).
+  static void setNightGlow(double night) {
+    for (final m in glowing) {
+      final c = m.baseColorFactor;
+      final k = 2.4 * night;
+      m.emissiveFactor = vm.Vector4(c.x * k, c.y * k, c.z * k, 1);
+    }
+  }
+
   // Unit-sized shapes; each instance is scaled to its item's size.
   static final Map<
     String,
@@ -341,6 +359,16 @@ class DetailChunks {
     'wire': [
       _part(_wireStrip, _mat(0.07, 0.07, 0.08, rough: 0.6)..doubleSided = true),
     ],
+    // Street life.
+    'awningRed': [_part(_box, _mat(0.72, 0.16, 0.12, rough: 0.9))],
+    'awningTeal': [_part(_box, _mat(0.12, 0.45, 0.42, rough: 0.9))],
+    'awningCream': [_part(_box, _mat(0.86, 0.78, 0.6, rough: 0.9))],
+    'signRed': [_part(_box, _glow(0.85, 0.12, 0.1))],
+    'signYellow': [_part(_box, _glow(0.95, 0.72, 0.12))],
+    'signBlue': [_part(_box, _glow(0.12, 0.35, 0.85))],
+    'laundryLight': [_part(_box, _mat(0.92, 0.9, 0.85, rough: 1))],
+    'laundryColour': [_part(_box, _mat(0.75, 0.35, 0.45, rough: 1))],
+    'lantern': [_part(_blob, _glow(0.9, 0.12, 0.08))],
     'mast': [_part(_box, _mat(0.82, 0.2, 0.18, rough: 0.5))],
     // Huangge (Ficus virens), Chongqing's city tree: wide, low, dark canopy.
     'treeHuangge': _tree(

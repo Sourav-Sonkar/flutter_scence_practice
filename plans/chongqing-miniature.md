@@ -338,3 +338,13 @@ backgrounds):
 4. Street life: power lines along roads, signboards, awnings, laundry, lanterns at night.
 5. Eye-level postcard views (stairway lane, riverside at dusk) and low drone flight.
 6. Golden-hour default in Painted mode, with sunbeams.
+
+### Street life (done)
+Built by `_streetLife` in the city builder from building walls that face a paved street
+5 m away: awnings (red, teal, cream) at 3 m, blade signs (red, yellow, blue) at 4.2 m,
+laundry on upper floors of taller homes, and lanterns strung along pedestrian streets,
+steps and footways. All are instanced details (8 floats each) in the rooftops chunks.
+Signs and lanterns keep their own emissive material in both styles and glow at night
+(`DetailChunks.setNightGlow`). Yuzhong tip: about 190 awnings, 200 signs, 290 laundry
+lines and 1270 lanterns. Assets: 2.90 MB and 8.69 MB. Verified in Chrome by day, at night
+and in Painted mode.

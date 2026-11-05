@@ -35,6 +35,16 @@ enum DetailType {
   // A sagging cable. Encoded differently from other details: position is
   // one end, size is the vector to the other end, rotation is the sag.
   wire,
+  // Street life (shown close up). Local +x runs along the wall unless noted.
+  awningRed,
+  awningTeal,
+  awningCream,
+  signRed, // vertical shop signs: local +x points out from the wall
+  signYellow,
+  signBlue,
+  laundryLight,
+  laundryColour,
+  lantern, // red paper lanterns along pedestrian streets and stairways
 }
 
 typedef Detail = ({
@@ -247,6 +257,7 @@ class CityBuilder {
 
   final List<List<P2>> _buildingRings = [];
   final List<(List<P2>, double)> _walls = [];
+  final List<(List<P2>, double, double, bool, int)> _facades = [];
   final List<
     ({
       List<P2> pts,
@@ -400,6 +411,7 @@ class CityBuilder {
     final ground = _terrainLayer(covers);
     _vegetation(covers, built, paved);
     _powerLines(built);
+    _streetLife(paved);
     return CityBuild(
         [ground, homes, towers, roads, structures],
         rides,
@@ -893,6 +905,7 @@ class CityBuilder {
     if (height > 140) _crown(roofRing, top);
     _buildingRings.add(ring);
     _walls.add((ring, top));
+    _facades.add((ring, base + 0.5, top, glass, id));
 
     final name = tags['name:en'] ?? tags['name'];
     if (name == null || height < 60) return null;
@@ -1190,6 +1203,146 @@ class CityBuilder {
       }
       prevL = l;
       prevR = r;
+    }
+  }
+
+  // ---- street life ----
+
+  /// Awnings, shop signs and laundry on walls that face a street, and
+  /// lanterns along pedestrian streets and stairways.
+  void _streetLife(Mask paved) {
+    final rng = Rng(77);
+    void add(
+      DetailType t,
+      double x,
+      double y,
+      double z,
+      double sx,
+      double sy,
+      double sz,
+      double rot,
+    ) {
+      _details.add((
+        type: t,
+        x: x,
+        y: y,
+        z: z,
+        sx: sx,
+        sy: sy,
+        sz: sz,
+        rot: rot,
+      ));
+      _count('street life ${t.name}');
+    }
+
+    for (final (ring, base, top, glass, _) in _facades) {
+      final height = top - base;
+      if (height < 6) continue;
+      var area2 = 0.0;
+      for (var i = 0; i < ring.length; i++) {
+        final (x0, z0) = ring[i];
+        final (x1, z1) = ring[(i + 1) % ring.length];
+        area2 += x0 * z1 - x1 * z0;
+      }
+      final sign = area2 > 0 ? 1.0 : -1.0;
+      for (var i = 0; i < ring.length; i++) {
+        final (x0, z0) = ring[i];
+        final (x1, z1) = ring[(i + 1) % ring.length];
+        final ex = x1 - x0, ez = z1 - z0;
+        final len = sqrt(ex * ex + ez * ez);
+        if (len < 4) continue;
+        final ux = ex / len, uz = ez / len; // along the wall
+        final nx = uz * sign, nz = -ux * sign; // out of the wall
+        final mx = (x0 + x1) / 2, mz = (z0 + z1) / 2;
+        // Only walls that face a street a few metres away.
+        if (!paved.at(mx + nx * 5, mz + nz * 5)) continue;
+        final g = terrain.heightAt(mx + nx * 2, mz + nz * 2);
+        final ground = max(g, base);
+        final along = atan2(
+          -uz,
+          ux,
+        ); // rotation putting local +x along the wall
+        final out = atan2(-nz, nx); // ... or out of the wall
+        if (!glass && rng.next() < 0.6) {
+          final t = [
+            DetailType.awningRed,
+            DetailType.awningTeal,
+            DetailType.awningCream,
+          ][(rng.next() * 3).floor()];
+          final w = min(len * 0.8, 10.0);
+          add(
+            t,
+            mx + nx * 0.75,
+            ground + 3.0,
+            mz + nz * 0.75,
+            w,
+            0.14,
+            1.5,
+            along,
+          );
+        }
+        if (rng.next() < (glass ? 0.25 : 0.55)) {
+          final t = [
+            DetailType.signRed,
+            DetailType.signYellow,
+            DetailType.signBlue,
+          ][(rng.next() * 3).floor()];
+          final o = (rng.next() - 0.5) * len * 0.6;
+          add(
+            t,
+            mx + ux * o + nx * 0.6,
+            ground + 4.2,
+            mz + uz * o + nz * 0.6,
+            1.1,
+            2.6 + rng.next() * 1.4,
+            0.16,
+            out,
+          );
+        }
+        if (!glass && height > 12 && rng.next() < 0.45) {
+          final floors = ((height - 4) / 3.2).floor();
+          for (var f = 0; f < 2; f++) {
+            final floor = 2 + (rng.next() * max(1, floors - 2)).floor();
+            final t = rng.next() < 0.5
+                ? DetailType.laundryLight
+                : DetailType.laundryColour;
+            final o = (rng.next() - 0.5) * len * 0.5;
+            add(
+              t,
+              mx + ux * o + nx * 0.4,
+              ground + floor * 3.2 + 1.2,
+              mz + uz * o + nz * 0.4,
+              min(len * 0.4, 3.5),
+              0.8,
+              0.05,
+              along,
+            );
+          }
+        }
+      }
+    }
+
+    // Lanterns strung along pedestrian streets and stairways.
+    for (final r in _roadRuns) {
+      if (r.bridge ||
+          !const {'pedestrian', 'steps', 'footway'}.contains(r.kind)) {
+        continue;
+      }
+      if (rng.next() > 0.45) continue; // not every lane
+      for (var k = 1; k < r.pts.length; k += 2) {
+        final (x, z) = r.pts[k];
+        if (!_inside(x, z)) continue;
+        add(
+          DetailType.lantern,
+          x,
+          terrain.heightAt(x, z) + 4.0,
+          z,
+          0.55,
+          0.7,
+          0.55,
+          0,
+        );
+      }
     }
   }
 

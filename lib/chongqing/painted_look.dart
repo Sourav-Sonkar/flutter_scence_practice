@@ -2,6 +2,7 @@ import 'package:flutter_scene/scene.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
 import 'city_look.dart';
+import 'detail_chunks.dart';
 import 'facade_textures.dart';
 import 'sky.dart';
 
@@ -78,7 +79,10 @@ class PaintedLook {
   Material detailFor(Material realistic) {
     final existing = _details[realistic];
     if (existing != null) return existing;
-    if (_pool.isEmpty || realistic is! PhysicallyBasedMaterial) {
+    // Glowing signs and lanterns keep their own material so they light up.
+    if (_pool.isEmpty ||
+        realistic is! PhysicallyBasedMaterial ||
+        DetailChunks.glowing.contains(realistic)) {
       return realistic;
     }
     final twin = _pool.removeLast();
