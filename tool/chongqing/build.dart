@@ -169,6 +169,37 @@ void main(List<String> args) {
       });
     }
   }
+  // Walking data: Float32 streams.
+  //  walls: [pointCount, top, x0, z0, x1, z1, ...] per building footprint
+  //  decks: [pointCount, half, x0, y0, z0, x1, y1, z1, ...] per bridge run
+  pad();
+  final wallsOffset = bytes.length;
+  final wallFloats = <double>[];
+  for (final (ring, top) in city.walls) {
+    wallFloats
+      ..add(ring.length.toDouble())
+      ..add(top);
+    for (final (x, z) in ring) {
+      wallFloats
+        ..add(x)
+        ..add(z);
+    }
+  }
+  bytes.add(Float32List.fromList(wallFloats).buffer.asUint8List());
+  final decksOffset = bytes.length;
+  final deckFloats = <double>[];
+  for (final d in city.decks) {
+    deckFloats
+      ..add(d.pts.length.toDouble())
+      ..add(d.half);
+    for (var k = 0; k < d.pts.length; k++) {
+      deckFloats
+        ..add(d.pts[k].$1)
+        ..add(d.heights[k])
+        ..add(d.pts[k].$2);
+    }
+  }
+  bytes.add(Float32List.fromList(deckFloats).buffer.asUint8List());
   pad();
   final detailsOffset = bytes.length;
   bytes.add(
@@ -212,6 +243,10 @@ void main(List<String> args) {
     // Rooftop items and plants live in the .bin as 8 floats each:
     // type, x, y, z, sx, sy, sz, rotation.
     'details': {'offset': detailsOffset, 'count': city.details.length},
+    'walk': {
+      'walls': {'offset': wallsOffset, 'floats': wallFloats.length},
+      'decks': {'offset': decksOffset, 'floats': deckFloats.length},
+    },
     'traffic': [
       for (final line in city.traffic)
         [

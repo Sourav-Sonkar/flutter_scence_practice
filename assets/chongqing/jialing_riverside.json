@@ -6468,8 +6468,18 @@
   "crown"
  ],
  "details": {
-  "offset": 7287948,
+  "offset": 7480584,
   "count": 38433
+ },
+ "walk": {
+  "walls": {
+   "offset": 7287948,
+   "floats": 24992
+  },
+  "decks": {
+   "offset": 7387916,
+   "floats": 23167
+  }
  },
  "traffic": [
   [

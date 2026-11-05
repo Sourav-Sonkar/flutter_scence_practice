@@ -57,6 +57,7 @@ class Detail {
 /// One district built by tool/chongqing/build.dart.
 class CityData {
   CityData._(
+    this.walk,
     this.traffic,
     this.boatLanes,
     this.details,
@@ -82,6 +83,9 @@ class CityData {
   final List<Detail> details;
   final List<RidePath> traffic; // drivable road centre lines
   final List<RidePath> boatLanes;
+
+  /// Ground, walls and bridge decks for the walker.
+  final WalkData walk;
 
   vm.Vector2 get center => bounds.center;
 
@@ -141,6 +145,7 @@ class CityData {
     );
 
     final layers = <({String kind, MeshGeometry geometry, vm.Aabb3 bounds})>[];
+    final walkGrids = <TerrainGrid>[];
     for (final l in (meta['layers'] as List).cast<Map<String, dynamic>>()) {
       final n = l['vertexCount'] as int;
       final srgb = bytes.buffer.asUint8List(l['colors'] as int, n * 4);
@@ -158,6 +163,7 @@ class CityData {
               vm.Vector3(b[3].toDouble(), b[4].toDouble(), b[5].toDouble()),
             );
       if (grid != null) {
+        walkGrids.add(TerrainGrid.fromJson(grid, bytes, l['heights'] as int));
         layers.add((
           kind: l['name'] as String,
           geometry: _gridMesh(grid, bytes, l['heights'] as int, colors),
@@ -209,7 +215,21 @@ class CityData {
       for (final line in (meta[key] as List? ?? const []))
         RidePath(kind, kind, [for (final p in line as List) v3(p as List)]),
     ];
+    final walkJson = meta['walk'] as Map<String, dynamic>?;
+    Float32List floats(String key) {
+      final m = walkJson?[key] as Map<String, dynamic>?;
+      if (m == null) return Float32List(0);
+      return bytes.buffer.asFloat32List(m['offset'] as int, m['floats'] as int);
+    }
+
+    final walk = WalkData(
+      walkGrids,
+      floats('walls'),
+      floats('decks'),
+      (meta['riverLevel'] as num).toDouble(),
+    );
     return CityData._(
+      walk,
       paths('traffic', 'road'),
       paths('boatLanes', 'river'),
       details,
@@ -320,4 +340,70 @@ class CityIndex {
       landmarks,
     );
   }
+}
+
+/// One terrain tile's height grid (same layout the build tool drapes roads
+/// and buildings on, so the walker stands exactly on the rendered ground).
+class TerrainGrid {
+  TerrainGrid(
+    this.minX,
+    this.minZ,
+    this.stepX,
+    this.stepZ,
+    this.cols,
+    this.rows,
+    this.heights,
+  );
+
+  factory TerrainGrid.fromJson(
+    Map<String, dynamic> g,
+    Uint8List bytes,
+    int offset,
+  ) {
+    final cols = g['cols'] as int, rows = g['rows'] as int;
+    return TerrainGrid(
+      (g['minX'] as num).toDouble(),
+      (g['minZ'] as num).toDouble(),
+      (g['stepX'] as num).toDouble(),
+      (g['stepZ'] as num).toDouble(),
+      cols,
+      rows,
+      bytes.buffer.asFloat32List(offset, cols * rows),
+    );
+  }
+
+  final double minX, minZ, stepX, stepZ;
+  final int cols, rows;
+  final Float32List heights;
+
+  double get maxX => minX + (cols - 1) * stepX;
+  double get maxZ => minZ + (rows - 1) * stepZ;
+
+  bool contains(double x, double z) =>
+      x >= minX && x <= maxX && z >= minZ && z <= maxZ;
+
+  /// Height on the same two-triangles-per-cell surface the mesh uses.
+  double heightAt(double x, double z) {
+    final fx = ((x - minX) / stepX).clamp(0.0, cols - 1.000001);
+    final fz = ((z - minZ) / stepZ).clamp(0.0, rows - 1.000001);
+    final i = fx.floor(), j = fz.floor();
+    final u = fx - i, v = fz - j;
+    double h(int a, int b) => heights[b * cols + a];
+    final h00 = h(i, j),
+        h10 = h(i + 1, j),
+        h01 = h(i, j + 1),
+        h11 = h(i + 1, j + 1);
+    return u >= v
+        ? h00 + (h10 - h00) * u + (h11 - h10) * v
+        : h00 + (h11 - h01) * u + (h01 - h00) * v;
+  }
+}
+
+/// Raw walking data for one district: terrain grids, building footprints
+/// (`[n, top, x, z, ...]`) and bridge decks (`[n, half, x, y, z, ...]`).
+class WalkData {
+  WalkData(this.grids, this.walls, this.decks, this.riverLevel);
+  final List<TerrainGrid> grids;
+  final Float32List walls, decks;
+  final double riverLevel;
 }

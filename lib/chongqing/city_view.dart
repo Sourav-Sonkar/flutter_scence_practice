@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart' hide Material;
 import 'package:flutter/scheduler.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_scene/scene.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
@@ -12,10 +13,13 @@ import 'clouds.dart';
 import 'district_scene.dart';
 import 'street_lamps.dart' show RainPainter;
 import 'facade_textures.dart';
+import 'joystick.dart';
 import 'ride_vehicles.dart';
 import 'sky.dart';
+import 'walk_world.dart';
+import 'walker.dart';
 
-enum _Mode { diorama, ride }
+enum _Mode { diorama, ride, walk }
 
 /// A miniature district of Chongqing built from OpenStreetMap data.
 /// Diorama mode orbits the city; ride mode follows a cableway or monorail.
@@ -47,6 +51,27 @@ class _CityViewState extends State<CityView> {
   final Node _rideNode = Node(name: 'ride camera');
   late final CameraComponent _rideCamera;
   double _rideYaw = 0, _ridePitch = -0.15;
+
+  // Walking: a person on the streets, followed by a third-person camera.
+  final Node _walkNode = Node(name: 'walk camera');
+  late final CameraComponent _walkCamera;
+  late final FollowCameraController _follow;
+  final Walker _walker = Walker();
+  final WalkWorld _walkWorld = WalkWorld();
+  final ValueNotifier<vm.Vector2> _stick = ValueNotifier(vm.Vector2.zero());
+  bool _spawned = false;
+
+  Camera get _camera => switch (_mode) {
+    _Mode.diorama => _orbitCamera.toCamera(),
+    _Mode.ride => _rideCamera.toCamera(),
+    _Mode.walk => _walkCamera.toCamera(),
+  };
+
+  Node get _cameraNode => switch (_mode) {
+    _Mode.diorama => _orbitNode,
+    _Mode.ride => _rideNode,
+    _Mode.walk => _walkNode,
+  };
 
   List<RideVehicles> get _rides => [
     for (final d in _districts.values) ...d.rides,
@@ -97,6 +122,7 @@ class _CityViewState extends State<CityView> {
     _stats.dispose();
     _clock.dispose();
     _hour.dispose();
+    _stick.dispose();
     super.dispose();
   }
 
@@ -158,6 +184,7 @@ class _CityViewState extends State<CityView> {
     try {
       final data = await CityData.load(name);
       final district = DistrictScene(name, data, _materials)..setQuality(_q);
+      _walkWorld.add(data.walk);
       _districts[name] = district;
       _scene.add(district.root);
       if (mounted) setState(() {}); // new rides for the picker
@@ -271,6 +298,31 @@ class _CityViewState extends State<CityView> {
     _rideNode.addComponent(_rideCamera);
     _scene.add(_rideNode);
 
+    _walkCamera = CameraComponent(
+      projection: PerspectiveProjection(
+        fovRadiansY: 55 * vm.degrees2Radians,
+        near: 0.3,
+        far: 9000,
+      ),
+    );
+    _follow = FollowCameraController(
+      followTarget: _walker.root,
+      distance: 7,
+      lookHeight: 1.5,
+      pitch: 0.32,
+      minDistance: 2,
+      maxDistance: 80,
+      minPitch: -0.1,
+      maxPitch: 1.35,
+      smoothing: 0.12,
+    );
+    _walkNode
+      ..addComponent(_walkCamera)
+      ..addComponent(_follow);
+    _scene
+      ..add(_walkNode)
+      ..add(_walker.root..visible = false);
+
     if (_shaderSky != null) {
       _look
         ..skybox = Skybox(_shaderSky!)
@@ -334,12 +386,8 @@ class _CityViewState extends State<CityView> {
   /// Projects a sky direction through whichever camera is active.
   Offset? _projectSky(vm.Vector3 dir, Size size) {
     if (size.isEmpty) return null;
-    final camera = _mode == _Mode.diorama
-        ? _orbitCamera.toCamera()
-        : _rideCamera.toCamera();
-    final eye = (_mode == _Mode.diorama ? _orbitNode : _rideNode)
-        .globalTransform
-        .getTranslation();
+    final camera = _camera;
+    final eye = _cameraNode.globalTransform.getTranslation();
     return camera.worldToScreen(eye + dir * 6000, size);
   }
 
@@ -361,9 +409,11 @@ class _CityViewState extends State<CityView> {
     _shaderSky?.parameters.setFloat('time', _clock.value);
     if (_playing) _hour.value = (_hour.value + dt / _secondsPerHour) % 24;
     if (_hour.value != _sky.hour) _updateSky();
-    final eye = _mode == _Mode.diorama
-        ? _orbitNode.globalTransform.getTranslation()
-        : _rideNode.globalTransform.getTranslation();
+    if (_mode == _Mode.walk) _updateWalk(dt);
+    // Stream around the walker when walking (the camera can swing wide).
+    final eye = _mode == _Mode.walk
+        ? _walker.position
+        : _cameraNode.globalTransform.getTranslation();
     _stream(eye);
     for (final d in _districts.values) {
       d.update(
@@ -371,11 +421,12 @@ class _CityViewState extends State<CityView> {
         eye,
         time: _clock.value,
         night: _sky.night,
-        showCars: _mode == _Mode.ride || _orbit.distance < 900,
+        showCars: _mode != _Mode.diorama || _orbit.distance < 900,
       );
     }
     // Tilt-shift is a diorama effect; riding, it would only smear the view.
     final dof = _mode == _Mode.diorama && _look.depthOfField;
+    // (No tilt-shift while walking or riding: it would blur the street.)
     if (_scene.depthOfField.enabled != dof) _scene.depthOfField.enabled = dof;
     if (dof) _scene.depthOfField.focusDistance = _orbit.distance;
 
@@ -388,6 +439,54 @@ class _CityViewState extends State<CityView> {
       _frames = 0;
       _frameTime = 0;
     }
+  }
+
+  void _setMode(_Mode mode) {
+    if (mode == _Mode.walk && !_walkWorld.isEmpty) {
+      // Drop the walker in where the diorama camera is looking, facing away
+      // from the camera, so the view carries on naturally.
+      final from = _mode == _Mode.diorama ? _orbit.target : _walker.position;
+      if (!_spawned || _mode == _Mode.diorama) {
+        _walker.spawn(_walkWorld, from.x, from.z);
+        final f = _camera.forward;
+        _walker.heading = atan2(f.x, f.z);
+        _follow.orbitBy(_walker.heading - _follow.yaw, 0);
+        _spawned = true;
+      }
+    }
+    _walker.root.visible = mode == _Mode.walk;
+    setState(() => _mode = mode);
+  }
+
+  /// Keyboard (WASD / arrows, Shift to run) plus the on-screen stick.
+  void _updateWalk(double dt) {
+    final keys = HardwareKeyboard.instance.logicalKeysPressed;
+    bool down(LogicalKeyboardKey a, LogicalKeyboardKey b) =>
+        keys.contains(a) || keys.contains(b);
+    final input = vm.Vector2(
+      (down(LogicalKeyboardKey.keyD, LogicalKeyboardKey.arrowRight)
+              ? 1.0
+              : 0.0) -
+          (down(LogicalKeyboardKey.keyA, LogicalKeyboardKey.arrowLeft)
+              ? 1.0
+              : 0.0),
+      (down(LogicalKeyboardKey.keyW, LogicalKeyboardKey.arrowUp) ? 1.0 : 0.0) -
+          (down(LogicalKeyboardKey.keyS, LogicalKeyboardKey.arrowDown)
+              ? 1.0
+              : 0.0),
+    )..add(_stick.value);
+    final run =
+        keys.contains(LogicalKeyboardKey.shiftLeft) ||
+        keys.contains(LogicalKeyboardKey.shiftRight) ||
+        _stick.value.length > 0.92;
+    _walker.update(
+      dt,
+      _walkWorld,
+      input,
+      _follow.forward,
+      _follow.right,
+      run: run,
+    );
   }
 
   /// Puts the ride camera in the active ride's lead vehicle. (Vehicles
@@ -428,10 +527,7 @@ class _CityViewState extends State<CityView> {
         child: Center(child: CircularProgressIndicator()),
       );
     }
-    final camera = _mode == _Mode.diorama
-        ? _orbitCamera.toCamera()
-        : _rideCamera.toCamera();
-    final view = SceneView(_scene, camera: camera, onTick: _onTick);
+    final view = SceneView(_scene, camera: _camera, onTick: _onTick);
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -446,12 +542,7 @@ class _CityViewState extends State<CityView> {
                   project: _projectSky,
                   time: () => _clock.value,
                   clouds: () => _clouds,
-                  forward: () {
-                    final camera = _mode == _Mode.diorama
-                        ? _orbitCamera.toCamera()
-                        : _rideCamera.toCamera();
-                    return camera.forward;
-                  },
+                  forward: () => _camera.forward,
                   fovY: () => _mode == _Mode.diorama
                       ? 45 * vm.degrees2Radians
                       : 60 * vm.degrees2Radians,
@@ -462,6 +553,8 @@ class _CityViewState extends State<CityView> {
           ),
         if (_mode == _Mode.diorama)
           CameraControls(controller: _orbit, child: view)
+        else if (_mode == _Mode.walk)
+          CameraControls(controller: _follow, child: view)
         else
           GestureDetector(
             onPanUpdate: (d) => setState(() {
@@ -483,6 +576,27 @@ class _CityViewState extends State<CityView> {
             ),
           ),
         SafeArea(child: _topBar(city)),
+        if (_mode == _Mode.walk)
+          Positioned(
+            left: 24,
+            bottom: 36,
+            child: SafeArea(child: Joystick(value: _stick)),
+          ),
+        if (_mode == _Mode.walk)
+          Positioned(
+            right: 16,
+            bottom: 32,
+            child: IgnorePointer(
+              child: Text(
+                'WASD / arrows to walk · Shift to run · drag to look · scroll to zoom',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  shadows: [Shadow(blurRadius: 4)],
+                ),
+              ),
+            ),
+          ),
         if (_mode == _Mode.diorama)
           Positioned(
             left: 0,
@@ -529,6 +643,11 @@ class _CityViewState extends State<CityView> {
                 icon: Icon(Icons.view_in_ar),
                 label: Text('Diorama'),
               ),
+              const ButtonSegment(
+                value: _Mode.walk,
+                icon: Icon(Icons.directions_walk),
+                label: Text('Walk'),
+              ),
               ButtonSegment(
                 value: _Mode.ride,
                 icon: const Icon(Icons.airline_seat_recline_normal),
@@ -537,7 +656,7 @@ class _CityViewState extends State<CityView> {
               ),
             ],
             selected: {_mode},
-            onSelectionChanged: (s) => setState(() => _mode = s.first),
+            onSelectionChanged: (s) => _setMode(s.first),
           ),
           if (_mode == _Mode.ride && _rides.length > 1)
             SegmentedButton<int>(

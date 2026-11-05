@@ -256,3 +256,25 @@ west edge. Loaded side by side with district 1 (`CityData.loadAll`).
   hidden).
 - **Adding a district** is now: add it to `districts.dart`, run fetch and build. The index
   updates and the app streams it in, with no app changes.
+
+## Walk mode (2026-11-05)
+
+A person to explore the streets, before more districts.
+- **Why not flutter_scene's character physics**: its `KinematicCharacterController` needs a
+  native physics backend (Rapier), and the pure-Dart `BasicSimulation` only does box
+  queries, so a small purpose-built walker is used instead. It runs the same on web and
+  phones.
+- **Data**: the build exports building footprints with roof heights and bridge decks
+  (about 270 KB for both districts); terrain grids are already loaded.
+- **`WalkWorld`**: ground from the terrain heightmap (slopes and steps); bridge decks are
+  walkable from above and ignored from below; walls push the walker out so it slides
+  along them; the river edge blocks. Buildings and decks are bucketed on coarse grids.
+- **`Walker`**: a person built from simple shapes (red jacket, jeans, white shoes), with
+  a walk cycle tied to distance covered, plus bob and lean when running. Walk 2.2 m/s,
+  run 7 m/s.
+- **Controls**: WASD / arrows, Shift to run, drag to look, scroll to zoom
+  (FollowCameraController), plus an on-screen joystick for touch (pushing it to the
+  edge runs). It enters walk mode where the diorama camera is looking.
+- Streaming follows the walker. Chrome, Medium: about 36 to 40 FPS walking.
+- **Later**: stop the camera going inside buildings behind the walker; jump; other
+  pedestrians.

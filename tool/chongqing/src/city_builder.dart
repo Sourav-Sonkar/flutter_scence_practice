@@ -56,6 +56,11 @@ class CityBuild {
   );
   final List<List<V3>> traffic; // drivable road centre lines, for cars
   final List<List<V3>> boatLanes; // lanes on the rivers, for boats
+
+  /// For walking: building footprints with their roof height (walls), and
+  /// bridge decks (walkable surfaces above the terrain).
+  late List<(List<P2>, double)> walls;
+  late List<({List<P2> pts, List<double> heights, double half})> decks;
   final List<MeshLayer> layers;
   final List<Ride> rides;
   final List<Detail> details;
@@ -237,6 +242,7 @@ class CityBuilder {
   }
 
   final List<List<P2>> _buildingRings = [];
+  final List<(List<P2>, double)> _walls = [];
   final List<
     ({
       List<P2> pts,
@@ -390,14 +396,19 @@ class CityBuilder {
     final ground = _terrainLayer(covers);
     _vegetation(covers, built, paved);
     return CityBuild(
-      [ground, homes, towers, roads, structures],
-      rides,
-      landmarks.take(12).toList(),
-      stats,
-      _details,
-      _trafficLines(),
-      _boatLanes(rivers),
-    );
+        [ground, homes, towers, roads, structures],
+        rides,
+        landmarks.take(12).toList(),
+        stats,
+        _details,
+        _trafficLines(),
+        _boatLanes(rivers),
+      )
+      ..walls = _walls
+      ..decks = [
+        for (final r in _roadRuns)
+          if (r.bridge) (pts: r.pts, heights: r.heights, half: r.half),
+      ];
   }
 
   // ---- terrain ----
@@ -809,6 +820,7 @@ class CityBuilder {
     if (_isGreatHall(tags)) {
       final top = _greatHall(ring, base);
       _buildingRings.add(ring);
+      _walls.add((ring, top));
       return {
         'name': '${tags['name:en'] ?? tags['name']}',
         'x': cx,
@@ -875,6 +887,7 @@ class CityBuilder {
     _rooftop(roofRing, top, glass, height, hash, id);
     if (height > 140) _crown(roofRing, top);
     _buildingRings.add(ring);
+    _walls.add((ring, top));
 
     final name = tags['name:en'] ?? tags['name'];
     if (name == null || height < 60) return null;
