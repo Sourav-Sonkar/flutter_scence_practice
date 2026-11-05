@@ -97,13 +97,27 @@ sky {
            * material_params.sun_visible * (1.0 - night);
 
     // --- stars ---
+    // Stars are round points, not grid cells: the sky is split into cells by
+    // longitude/latitude, a few cells hold a star at a random spot inside
+    // them, and each star is a small soft disc. Cell width shrinks with
+    // latitude, so the longitude distance is corrected by cos(latitude).
     if (material_params.stars > 0.001 && up > 0.05) {
-      vec2 cell = floor(vec2(atan(dir.z, dir.x), asin(up)) * 160.0);
+      float lat = asin(up);
+      vec2 g = vec2(atan(dir.z, dir.x), lat) * 220.0;
+      vec2 cell = floor(g);
       float r = cq_hash(cell);
-      float star = step(0.9965, r);
-      float twinkle = 0.6 + 0.4 * sin(t * (1.5 + r * 3.0) + r * 40.0);
-      col += vec3(1.0, 0.97, 0.9) * star * twinkle * material_params.stars
-             * smoothstep(0.05, 0.4, up) * 0.6;
+      if (r > 0.992) {
+        vec2 centre = vec2(cq_hash(cell + 1.7), cq_hash(cell + 9.2)) * 0.6 + 0.2;
+        vec2 d = (fract(g) - centre) * vec2(cos(lat), 1.0);
+        float size = 0.1 + 0.08 * cq_hash(cell + 3.3);
+        float disc = exp(-dot(d, d) / (size * size));
+        // Mostly faint, a few bright; a slow, gentle shimmer.
+        float brightness = mix(0.35, 1.6, pow(cq_hash(cell + 5.1), 4.0));
+        float shimmer = 0.85 + 0.15 * sin(t * (0.7 + r * 1.3) + r * 60.0);
+        vec3 tint = mix(vec3(1.0, 0.92, 0.82), vec3(0.85, 0.9, 1.0), cq_hash(cell + 7.7));
+        col += tint * disc * brightness * shimmer * material_params.stars
+               * smoothstep(0.05, 0.35, up);
+      }
     }
 
     // --- moon ---
