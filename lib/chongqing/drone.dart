@@ -50,9 +50,10 @@ class Drone {
     final cruise = (12 + height * 0.45).clamp(12.0, 160.0) * (boost ? 4 : 1);
 
     final f = vm.Vector3(sin(yaw), 0, cos(yaw));
-    // Screen-right for a +Y-up camera looking along f (as in flutter_scene's
-    // FlyCameraController, where D moves along -(cos yaw, 0, -sin yaw)).
-    final r = vm.Vector3(-cos(yaw), 0, sin(yaw));
+    // Screen-right. flutter_scene's view is left-handed (+Z forward, +Y up,
+    // +X right when facing +Z), so right is d(forward)/d(yaw). This matches
+    // FlyCameraController once its opposite yaw sign is accounted for.
+    final r = vm.Vector3(cos(yaw), 0, -sin(yaw));
     final want = (f * move.y + r * move.x);
     if (want.length > 1) want.normalize();
     want.scale(cruise);
@@ -76,7 +77,7 @@ class Drone {
 
   /// Turns the view by a drag ([dx], [dy] in radians).
   void look(double dx, double dy) {
-    yaw -= dx; // dragging right turns the view right
+    yaw += dx; // dragging right turns the view right (yaw grows rightward)
     pitch = (pitch - dy).clamp(-1.45, 1.2);
   }
 }
