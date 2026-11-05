@@ -1,0 +1,63 @@
+# Builds the web version of this experience and publishes it to its own
+# folder on the gh-pages branch, so each experience branch can have its own
+# site under https://<user>.github.io/<repo>/<SITE_DIR>/ without overwriting
+# the others.
+#
+# No --enable-flutter-gpu here: on the web flutter_scene uses its own WebGL2
+# backend, and the flag only applies to native platforms.
+name: Deploy web
+
+on:
+  push:
+    branches: [feature/chongqing-miniature]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: deploy-web-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Same Flutter master commit as the local FVM install (.fvmrc = master).
+  FLUTTER_COMMIT: 88b41031482918e316ca513c4647cdd3c3d39208
+  SITE_DIR: chongqing
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache Flutter SDK
+        uses: actions/cache@v4
+        with:
+          path: ~/flutter
+          key: flutter-${{ env.FLUTTER_COMMIT }}
+
+      - name: Install Flutter at the pinned commit
+        run: |
+          if [ ! -x "$HOME/flutter/bin/flutter" ]; then
+            git clone --filter=blob:none https://github.com/flutter/flutter.git "$HOME/flutter"
+            git -C "$HOME/flutter" checkout "$FLUTTER_COMMIT"
+          fi
+          echo "$HOME/flutter/bin" >> "$GITHUB_PATH"
+
+      - run: flutter --version
+      - run: flutter pub get
+      - run: flutter test test/city_build_test.dart
+
+      - name: Build web
+        run: >
+          flutter build web --release
+          --base-href "/${{ github.event.repository.name }}/${{ env.SITE_DIR }}/"
+
+      - name: Publish to gh-pages/${{ env.SITE_DIR }}
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: gh-pages
+          publish_dir: build/web
+          destination_dir: ${{ env.SITE_DIR }}
+          keep_files: true

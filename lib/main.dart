@@ -2,7 +2,7 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_scene/scene.dart';
-import 'package:flutter_scene_practice/declarative_screen.dart';
+import 'package:flutter_scene_practice/chongqing/city_view.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
 void main() => runApp(const MyApp());
@@ -12,7 +12,7 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const MaterialApp(home: Scaffold(body: CakeDemo()));
+    return const MaterialApp(home: Scaffold(body: CityView()));
   }
 }
 
