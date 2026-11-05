@@ -1,160 +1,73 @@
-import 'dart:math' as math;
-import 'dart:ui' show Color;
-
 import 'package:flutter_scene/scene.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
-enum TimeOfDayMode { day, sunset, night }
+import 'facade_textures.dart';
+import 'sky.dart';
 
 enum Weather { clear, fog, rain }
 
 /// Low: phones. Medium: laptops in a browser. High: native desktop and iOS.
 enum Quality { low, medium, high }
 
-/// Everything that changes with time of day, weather and quality: sun,
-/// sky, post-processing, lit windows, street lamps and wet roads.
+/// Turns the clock, weather and quality into the scene's lighting.
+///
+/// [configure] runs when weather or quality change and switches effects on
+/// or off. [update] runs every frame and only moves continuous values (sun,
+/// exposure, fog colour, glow, window lights), so a running day cycle stays
+/// smooth instead of rebuilding the render setup each frame.
 class CityLook {
   CityLook({
     required this.scene,
     required this.homes,
     required this.towers,
+    required this.homeLights,
+    required this.towerLights,
     required this.roads,
     required this.water,
-    required this.lamps,
   });
 
   final Scene scene;
   final PhysicallyBasedMaterial homes, towers, roads, water;
-  final Node lamps;
+  final List<Texture2D> homeLights, towerLights;
 
-  final GradientSkySource sky = GradientSkySource();
+  Weather _weather = Weather.clear;
+  int _lightLevel = -1;
+  double _lastHour = -1;
+  double _gradeSat = -1, _gradeTemp = -1, _emissive = -1;
+  late final DirectionalLight _light = DirectionalLight(castsShadow: true);
 
-  /// Top and horizon colours of the current sky, for a Flutter gradient
-  /// behind the 3D view. The web renderer clears to transparent and does not
-  /// draw the procedural skybox, so this is what shows there.
-  List<Color> backdrop = const [Color(0xff2a5fb8), Color(0xffc8dcf2)];
-
-  static Color _display(vm.Vector3 linear, double exposure) {
-    int c(double v) =>
-        (math.pow((v * exposure).clamp(0.0, 1.0), 1 / 2.2) * 255).round();
-    return Color.fromARGB(255, c(linear.x), c(linear.y), c(linear.z));
-  }
-
-  void apply({
-    required TimeOfDayMode time,
-    required Weather weather,
-    required Quality quality,
-  }) {
-    final high = quality == Quality.high;
-    final medium = quality == Quality.medium;
-    scene.skybox ??= Skybox(sky);
+  void configure({required Weather weather, required Quality quality}) {
+    _weather = weather;
+    final high = quality == Quality.high, medium = quality == Quality.medium;
     final fog = weather == Weather.fog, rain = weather == Weather.rain;
-    final overcast = fog || rain;
 
-    // ---- sun / moon and sky ----
-    late vm.Vector3 dir, color, zenith, horizon, fogColor, sunDisk;
-    late double sunIntensity, envIntensity, exposure, windows;
-    switch (time) {
-      case TimeOfDayMode.day:
-        dir = vm.Vector3(0.62, -0.5, 0.6);
-        color = vm.Vector3(1.0, 0.9, 0.76);
-        sunIntensity = 4.2;
-        zenith = vm.Vector3(0.16, 0.38, 0.78);
-        horizon = vm.Vector3(0.78, 0.86, 0.95);
-        fogColor = vm.Vector3(0.74, 0.83, 0.94);
-        sunDisk = vm.Vector3(4, 3.4, 2.6);
-        envIntensity = 0.75;
-        exposure = 1.05;
-        windows = 0;
-      case TimeOfDayMode.sunset:
-        dir = vm.Vector3(0.9, -0.16, 0.35);
-        color = vm.Vector3(1.0, 0.58, 0.32);
-        sunIntensity = 3.2;
-        zenith = vm.Vector3(0.22, 0.26, 0.5);
-        horizon = vm.Vector3(1.0, 0.56, 0.3);
-        fogColor = vm.Vector3(0.85, 0.6, 0.45);
-        sunDisk = vm.Vector3(6, 3, 1.2);
-        envIntensity = 0.45;
-        exposure = 1.1;
-        windows = 0.9;
-      case TimeOfDayMode.night:
-        // Moonlight: dim, cool, still casting soft shadows.
-        dir = vm.Vector3(-0.35, -0.6, -0.45);
-        color = vm.Vector3(0.55, 0.66, 1.0);
-        sunIntensity = 0.35;
-        zenith = vm.Vector3(0.006, 0.01, 0.03);
-        horizon = vm.Vector3(0.04, 0.06, 0.12);
-        fogColor = vm.Vector3(0.04, 0.05, 0.09);
-        sunDisk = vm.Vector3(0.6, 0.65, 0.8);
-        envIntensity = 0.06;
-        exposure = 1.5;
-        windows = 3.2;
-    }
-    if (overcast) {
-      sunIntensity *= time == TimeOfDayMode.night ? 0.6 : 0.4;
-      final grey = time == TimeOfDayMode.night
-          ? vm.Vector3(0.05, 0.055, 0.07)
-          : vm.Vector3(0.62, 0.65, 0.68);
-      zenith = zenith * 0.4 + grey * 0.6;
-      horizon = horizon * 0.3 + grey * 0.7;
-      fogColor = fogColor * 0.3 + grey * 0.7;
-      sunDisk = sunDisk * 0.1;
-    }
-    dir.normalize();
-    backdrop = [_display(zenith, exposure), _display(horizon, exposure)];
-    sky
-      ..zenithColor = zenith
-      ..horizonColor = horizon
-      ..groundColor = horizon * 0.5
-      ..sunDirection = -dir
-      ..sunColor = sunDisk;
+    _light
+      ..castsShadow = true
+      ..shadowMaxDistance = high ? 3000 : 1800
+      ..shadowCascadeCount = high ? 4 : 2
+      ..shadowMapResolution = high || medium ? 2048 : 1024
+      ..shadowDepthBias = 0.4
+      ..shadowNormalBias = 0.6;
+    scene.directionalLight = _light;
 
-    scene.directionalLight = DirectionalLight(
-      direction: dir,
-      color: color,
-      intensity: sunIntensity,
-      castsShadow: true,
-      shadowMaxDistance: high ? 3000 : 1800,
-      shadowCascadeCount: high ? 4 : 2,
-      shadowMapResolution: high || medium ? 2048 : 1024,
-      shadowDepthBias: 0.4,
-      shadowNormalBias: 0.6,
-    );
-
-    // ---- lit windows, lamps, wet surfaces ----
-    homes.emissiveFactor = vm.Vector4(windows, windows, windows, 1);
-    // Office floors are big and bright; keep them from washing out to white.
-    final office = windows * 0.5;
-    towers.emissiveFactor = vm.Vector4(office, office, office, 1);
-    lamps.visible = time != TimeOfDayMode.day;
     roads.roughnessFactor = rain ? 0.3 : 0.9;
     water.roughnessFactor = rain ? 0.25 : 0.06;
 
-    final night = time == TimeOfDayMode.night;
     scene.environmentSettings = EnvironmentSettings(
       toneMapping: ToneMappingMode.aces,
-      exposure: exposure,
-      environmentIntensity: envIntensity,
-      // A painted-model grade: richer colour, a touch warm and contrasty.
       colorGradingEnabled: true,
-      saturation: overcast ? 1.05 : (night ? 1.25 : 1.35),
       contrast: 1.1,
-      temperature: night ? -0.05 : 0.06,
       fogEnabled: true,
       fogMode: FogMode.exponential,
-      fogColor: fogColor,
-      fogDensity: fog ? 0.0009 : (rain ? 0.00035 : (night ? 0.00008 : 0.00005)),
       ambientOcclusionEnabled: high || medium,
       ambientOcclusionMethod: AmbientOcclusionMethod.groundTruth,
       ambientOcclusionRadius: 6,
       ambientOcclusionIntensity: 1.2,
       screenSpaceReflectionsEnabled: high,
       screenSpaceReflectionsMaxDistance: 600,
-      // Glow is what makes Chongqing at night: keep it on even on Low.
-      bloomEnabled: high || medium || time != TimeOfDayMode.day,
-      bloomThreshold: night ? 0.9 : 2.2,
-      bloomIntensity: night ? 0.35 : 0.12,
-      // Tilt-shift: a narrow focus band at the orbit target.
+      // Always on: at night the glow is what makes the city.
+      bloomEnabled: true,
+      bloomScatter: 0.75,
       depthOfFieldEnabled: (high || medium) && !fog,
       depthOfFieldQuality: high
           ? DepthOfFieldQuality.medium
@@ -164,7 +77,6 @@ class CityLook {
       depthOfFieldMaxForegroundBlur: 28,
       depthOfFieldMaxBackgroundBlur: 28,
       vignetteEnabled: true,
-      vignetteIntensity: night ? 0.4 : 0.3,
     );
     scene.renderScale = switch (quality) {
       Quality.high => 1.0,
@@ -174,5 +86,82 @@ class CityLook {
     scene.antiAliasingMode = high
         ? AntiAliasingMode.auto
         : AntiAliasingMode.fxaa;
+    _lightLevel = -1; // force everything to refresh on the next update
+    _lastHour = -1;
+    _gradeSat = -1;
+    _emissive = -1;
   }
+
+  /// Which share of windows is lit at a clock hour: few at dusk, most in
+  /// the evening, fewer after midnight, a few early risers before dawn.
+  static int lightLevelFor(double hour) {
+    if (hour >= 19.5 && hour < 23.5) return 2; // evening peak
+    if (hour >= 23.5 || hour < 5.5) return 1; // late night
+    return 0; // dusk and dawn
+  }
+
+  void update(SkyState sky, double hour) {
+    // Nothing moves while the clock is paused: skip the work entirely.
+    if ((hour - _lastHour).abs() < 0.002) return;
+    _lastHour = hour;
+    final fog = _weather == Weather.fog, rain = _weather == Weather.rain;
+    final night = sky.night;
+
+    // The sun owns the shadow light by day, the moon by night.
+    final useMoon = sky.sunIntensity < sky.moonIntensity * 2.5;
+    if (useMoon) {
+      _light
+        ..direction = -sky.moon
+        ..color = vm.Vector3(0.55, 0.66, 1.0)
+        ..intensity = sky.moonIntensity;
+    } else {
+      _light
+        ..direction = -sky.sun
+        ..color = sky.sunColor
+        ..intensity = sky.sunIntensity;
+    }
+
+    scene
+      ..exposure = sky.exposure
+      ..environmentIntensity = sky.environment;
+    scene.fog
+      ..color = sky.fog
+      ..density = fog ? 0.0009 : (rain ? 0.00035 : 0.00005 + 0.00004 * night);
+
+    // Colour grading rebuilds its lookup when touched, so only change it in
+    // visible steps.
+    final sat = fog || rain ? 1.05 : 1.35 - 0.15 * night;
+    final temp = 0.06 + 0.16 * sky.golden - 0.1 * night;
+    if ((sat - _gradeSat).abs() > 0.02 || (temp - _gradeTemp).abs() > 0.01) {
+      _gradeSat = sat;
+      _gradeTemp = temp;
+      scene.postProcess.colorGrading
+        ..saturation = sat
+        ..temperature = temp;
+    }
+    // Bloom: only the brightest lights glow, a little more so at night.
+    scene.postProcess.bloom
+      ..threshold = 2.2 - 1.0 * night
+      ..intensity = 0.1 + 0.16 * night;
+    scene.postProcess.vignette.intensity = 0.3 + 0.12 * night;
+
+    // Windows: brightness follows darkness; which windows are lit follows
+    // the clock, swapping to a level that adds or removes whole windows.
+    final level = lightLevelFor(hour);
+    if (level != _lightLevel) {
+      _lightLevel = level;
+      homes.emissiveTexture = homeLights[level];
+      towers.emissiveTexture = towerLights[level];
+    }
+    if ((night - _emissive).abs() > 0.01) {
+      _emissive = night;
+      final w = 1.4 * night;
+      homes.emissiveFactor = vm.Vector4(w, w, w, 1);
+      final o = 0.5 * night;
+      towers.emissiveFactor = vm.Vector4(o, o, o, 1);
+    }
+  }
+
+  /// Level names for reference; matches [FacadeTextures.levels] order.
+  static const levels = FacadeTextures.levels;
 }

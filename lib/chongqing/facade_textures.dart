@@ -16,7 +16,48 @@ class FacadeTextures {
   FacadeTextures._(this.color, this.lights);
 
   final Texture2D color;
-  final Texture2D lights;
+
+  /// Night lights at increasing shares of lit windows. Each window has its
+  /// own switch-on point, so every level contains the windows of the levels
+  /// below it and swapping levels reads as lights coming on or going out.
+  final List<Texture2D> lights;
+
+  /// Shares of windows lit at each level: dusk, late night, evening peak.
+  static const List<double> levels = [0.18, 0.3, 0.46];
+
+  /// Warm interior colours in sRGB, roughly 2700 K to 4000 K, plus the odd
+  /// cool TV glow. Real cities at night are mostly warm.
+  static (int, int, int) _warm(Random rnd) {
+    final r = rnd.nextDouble();
+    if (r < 0.06) return (170, 190, 240); // TV
+    if (r < 0.4) return (255, 166, 86); // 2700 K
+    if (r < 0.75) return (255, 182, 110); // 3000 K
+    if (r < 0.92) return (255, 198, 140); // 3500 K
+    return (255, 214, 168); // 4000 K
+  }
+
+  static Uint8List _scaled((int, int, int) c, double k) => Uint8List.fromList([
+    (c.$1 * k).round(),
+    (c.$2 * k).round(),
+    (c.$3 * k).round(),
+  ]);
+
+  static List<Texture2D> _levelTextures(
+    List<(int, int, int, int, (int, int, int), double, double)> windows,
+  ) {
+    return [
+      for (final share in levels)
+        () {
+          final px = _blank(0);
+          for (final (x0, y0, x1, y1, c, threshold, dim) in windows) {
+            if (threshold >= share) continue;
+            final v = _scaled(c, dim);
+            _rect(px, x0, y0, x1, y1, (v[0], v[1], v[2]));
+          }
+          return Texture2D.fromPixels(px, _size, _size);
+        }(),
+    ];
+  }
 
   static const int _size = 256;
   static const int _cell = _size ~/ 8; // one bay by one floor
@@ -51,8 +92,9 @@ class FacadeTextures {
   /// Punched windows with variation: curtains, open windows, AC units.
   /// At night about half the homes have warm lights on.
   static FacadeTextures residential() {
-    final px = _blank(255), lit = _blank(0);
+    final px = _blank(255);
     final rnd = Random(7);
+    final windows = <(int, int, int, int, (int, int, int), double, double)>[];
     for (var fy = 0; fy < 8; fy++) {
       for (var bx = 0; bx < 8; bx++) {
         final x = bx * _cell, y = fy * _cell;
@@ -76,31 +118,47 @@ class FacadeTextures {
             240,
           ));
         }
-        final on = rnd.nextDouble();
-        if (on < 0.55) {
-          final glow = on < 0.08
-              ? (190, 210, 255) // a TV's cool light
-              : (255, 176 + rnd.nextInt(40), 96 + rnd.nextInt(40));
-          _rect(lit, x + 8, y + 7, x + _cell - 6, y + _cell - 9, glow);
-        }
+        // Curtains dim many lit windows.
+        windows.add((
+          x + 8,
+          y + 7,
+          x + _cell - 6,
+          y + _cell - 9,
+          _warm(rnd),
+          rnd.nextDouble(),
+          0.45 + rnd.nextDouble() * 0.55,
+        ));
       }
     }
     return FacadeTextures._(
       Texture2D.fromPixels(px, _size, _size),
-      Texture2D.fromPixels(lit, _size, _size),
+      _levelTextures(windows),
     );
   }
 
   /// Curtain-wall glass: a fine mullion grid with slightly varying panes.
   /// At night whole office floors glow in cool white.
   static FacadeTextures glass() {
-    final px = _blank(255), lit = _blank(0);
+    final px = _blank(255);
     final rnd = Random(11);
+    final windows = <(int, int, int, int, (int, int, int), double, double)>[];
     for (var fy = 0; fy < 8; fy++) {
-      final floorOn = rnd.nextDouble() < 0.55;
+      // Offices light whole floors in neutral-warm white, not blue.
+      final floorThreshold = rnd.nextDouble();
+      final floorColor = rnd.nextDouble() < 0.7
+          ? (255, 214, 172)
+          : (255, 230, 204);
       for (var bx = 0; bx < 8; bx++) {
         final shade = 150 + rnd.nextInt(40);
-        final paneOn = floorOn && rnd.nextDouble() < 0.85;
+        windows.add((
+          bx * _cell + 2,
+          fy * _cell,
+          (bx + 1) * _cell,
+          (fy + 1) * _cell - 5,
+          floorColor,
+          rnd.nextDouble() < 0.85 ? floorThreshold : 1.0,
+          0.4 + rnd.nextDouble() * 0.3,
+        ));
         for (var y = fy * _cell; y < (fy + 1) * _cell; y++) {
           for (var x = bx * _cell; x < (bx + 1) * _cell; x++) {
             final lx = x - bx * _cell, ly = y - fy * _cell;
@@ -116,18 +174,13 @@ class FacadeTextures {
             px[i] = g - 20;
             px[i + 1] = g - 6;
             px[i + 2] = min(255, g + 10);
-            if (paneOn) {
-              lit[i] = 200;
-              lit[i + 1] = 222;
-              lit[i + 2] = 255;
-            }
           }
         }
       }
     }
     return FacadeTextures._(
       Texture2D.fromPixels(px, _size, _size),
-      Texture2D.fromPixels(lit, _size, _size),
+      _levelTextures(windows),
     );
   }
 }

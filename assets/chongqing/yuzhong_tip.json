@@ -785,11 +785,12 @@
   "treeBanyan",
   "treeGinkgo",
   "shrub",
-  "bougainvillea"
+  "bougainvillea",
+  "crown"
  ],
  "details": {
   "offset": 4172460,
-  "count": 12196
+  "count": 12219
  },
  "traffic": [
   [
@@ -17485,6 +17486,7 @@
   "rooftop helipad": 13,
   "rooftop mast": 14,
   "rooftop acUnit": 1608,
+  "led crowns": 23,
   "cableway lines": 2,
   "bridges": 67,
   "piers": 202,

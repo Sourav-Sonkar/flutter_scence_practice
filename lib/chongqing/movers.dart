@@ -22,6 +22,11 @@ class _Fleet {
   final double lift;
 
   void step(double dt) {
+    advance(dt);
+    place();
+  }
+
+  void advance(double dt) {
     for (final m in movers) {
       m.s += m.speed * m.dir * dt;
       if (m.s > m.path.length || m.s < 0) {
@@ -30,6 +35,10 @@ class _Fleet {
         m.dir = -m.dir;
       }
     }
+  }
+
+  /// Writes every part's transform from the movers' current positions.
+  void place() {
     for (final (mesh, offset) in parts) {
       mesh.updateInstanceTransforms((list) {
         for (var i = 0; i < movers.length; i++) {
@@ -104,6 +113,31 @@ class Movers {
           color: vm.Vector4(0.2, 0.24, 0.3, 1),
         );
       }
+      // Night: two warm headlights in front, red tail lights behind.
+      final heads = InstancedMesh(
+        geometry: CuboidGeometry(vm.Vector3(1.6, 0.35, 0.2)),
+        material: UnlitMaterial()
+          ..baseColorFactor = vm.Vector4(3.0, 2.6, 1.9, 1),
+      );
+      final tails = InstancedMesh(
+        geometry: CuboidGeometry(vm.Vector3(1.5, 0.3, 0.2)),
+        material: UnlitMaterial()
+          ..baseColorFactor = vm.Vector4(2.6, 0.12, 0.08, 1),
+      );
+      for (var i = 0; i < cars.length; i++) {
+        heads.addInstance(vm.Matrix4.identity());
+        tails.addInstance(vm.Matrix4.identity());
+      }
+      _carLights = _Fleet(cars, [
+        (heads, vm.Vector3(0, 0.05, 2.22)),
+        (tails, vm.Vector3(0, 0.1, -2.22)),
+      ], 0.4);
+      carLightsNode
+        ..castsShadows = false
+        ..visible = false
+        ..add(Node()..addComponent(InstancedMeshComponent(heads)))
+        ..add(Node()..addComponent(InstancedMeshComponent(tails)));
+      carsNode.add(carLightsNode);
       _cars = _Fleet(cars, [
         (body, vm.Vector3.zero()),
         (cabin, vm.Vector3(0, 0.7, -0.3)),
@@ -152,6 +186,21 @@ class Movers {
               : vm.Vector4(0.2, 0.35, 0.65, 1),
         );
       }
+      // Night: a band of warm deck lights along each cruiser.
+      final deck = InstancedMesh(
+        geometry: CuboidGeometry(vm.Vector3(7.4, 0.4, 30.4)),
+        material: UnlitMaterial()
+          ..baseColorFactor = vm.Vector4(2.6, 1.6, 0.6, 1),
+      );
+      for (var i = 0; i < boats.length; i++) {
+        deck.addInstance(vm.Matrix4.identity());
+      }
+      _boatLights = _Fleet(boats, [(deck, vm.Vector3(0, 1.0, 0))], 0.6);
+      boatLightsNode
+        ..castsShadows = false
+        ..visible = false
+        ..add(Node()..addComponent(InstancedMeshComponent(deck)));
+      root.add(boatLightsNode);
       _boats = _Fleet(boats, [
         (hull, vm.Vector3.zero()),
         (house, vm.Vector3(0, 2.8, -2)),
@@ -164,13 +213,22 @@ class Movers {
 
   final Node root = Node(name: 'movers');
   final Node carsNode = Node(name: 'cars');
-  _Fleet? _cars;
-  _Fleet? _boats;
+  final Node carLightsNode = Node(name: 'car lights');
+  final Node boatLightsNode = Node(name: 'boat lights');
+  _Fleet? _cars, _carLights;
+  _Fleet? _boats, _boatLights;
 
-  /// Cars only draw and move when [showCars] (the camera is close).
-  void update(double dt, {required bool showCars}) {
+  /// Cars only draw and move when [showCars] (the camera is close); their
+  /// lights and the boats' deck lights show at [night].
+  void update(double dt, {required bool showCars, required bool night}) {
     _boats?.step(dt);
+    if (boatLightsNode.visible != night) boatLightsNode.visible = night;
+    if (night) _boatLights?.place();
     if (carsNode.visible != showCars) carsNode.visible = showCars;
-    if (showCars) _cars?.step(dt);
+    if (carLightsNode.visible != night) carLightsNode.visible = night;
+    if (showCars) {
+      _cars?.step(dt);
+      if (night) _carLights?.place();
+    }
   }
 }

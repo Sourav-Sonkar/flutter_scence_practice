@@ -8,9 +8,11 @@ import 'package:vector_math/vector_math.dart' as vm;
 
 import 'city_data.dart';
 import 'city_look.dart';
+import 'crowns.dart';
 import 'detail_chunks.dart';
 import 'facade_textures.dart';
 import 'movers.dart';
+import 'sky.dart';
 import 'street_lamps.dart';
 
 enum _Mode { diorama, ride }
@@ -45,7 +47,16 @@ class _CityViewState extends State<CityView> {
   late final DetailChunks _rooftops;
   late final DetailChunks _vegetation;
   late final CityLook _look;
-  TimeOfDayMode _time = TimeOfDayMode.day;
+  late final StreetLamps _lamps;
+  late final LedCrowns _crowns;
+
+  /// Local clock time in hours (0-24). Starts on a warm afternoon.
+  final ValueNotifier<double> _hour = ValueNotifier(15.5);
+  bool _playing = false;
+
+  /// One in-game hour passes in this many real seconds while playing.
+  static const double _secondsPerHour = 10;
+  late SkyState _sky = SkyState(15.5, overcast: false, foggy: false);
   Weather _weather = Weather.clear;
   final ValueNotifier<double> _clock = ValueNotifier(0);
   late final Movers _movers;
@@ -80,6 +91,7 @@ class _CityViewState extends State<CityView> {
     SchedulerBinding.instance.removeTimingsCallback(_onTimings);
     _stats.dispose();
     _clock.dispose();
+    _hour.dispose();
     super.dispose();
   }
 
@@ -120,12 +132,12 @@ class _CityViewState extends State<CityView> {
         glassTex = FacadeTextures.glass();
     final homes = _pbr(0.75)
       ..baseColorTexture = homeTex.color
-      ..emissiveTexture = homeTex.lights;
+      ..emissiveTexture = homeTex.lights.first;
     // Glass towers: smoother so they pick up the sky.
     final towers = _pbr(0.4)
       ..metallicFactor = 0.1
       ..baseColorTexture = glassTex.color
-      ..emissiveTexture = glassTex.lights;
+      ..emissiveTexture = glassTex.lights.first;
     final roads = _pbr(0.9);
     final materials = <String, Material>{
       'terrain': _pbr(0.95),
@@ -158,13 +170,17 @@ class _CityViewState extends State<CityView> {
       showWithin: 2400,
     );
     _rooftops = DetailChunks(
-      city.details.where((d) => !plants.contains(d.type)).toList(),
+      city.details
+          .where((d) => !plants.contains(d.type) && d.type != 'crown')
+          .toList(),
     );
+    _crowns = LedCrowns(city.details.where((d) => d.type == 'crown').toList());
+    _scene.add(_crowns.root);
     _scene
       ..add(_vegetation.root)
       ..add(_rooftops.root);
-    final lamps = buildStreetLamps(city.traffic);
-    _scene.add(lamps);
+    _lamps = StreetLamps(city.traffic);
+    _scene.add(_lamps.root);
     _movers = Movers(city);
     _scene.add(_movers.root);
 
@@ -175,9 +191,10 @@ class _CityViewState extends State<CityView> {
       scene: _scene,
       homes: homes,
       towers: towers,
+      homeLights: homeTex.lights,
+      towerLights: glassTex.lights,
       roads: roads,
       water: water,
-      lamps: lamps,
     );
     _scene.add(
       Node(
@@ -244,9 +261,31 @@ class _CityViewState extends State<CityView> {
   }
 
   void _applyLook() {
-    _look.apply(time: _time, weather: _weather, quality: _q);
+    _look.configure(weather: _weather, quality: _q);
+    _updateSky();
     // Low keeps trees to a shorter range to save phones some work.
     _vegetation.showWithin = _q == Quality.low ? 1300 : 2400;
+  }
+
+  void _updateSky() {
+    _sky = SkyState(
+      _hour.value,
+      overcast: _weather != Weather.clear,
+      foggy: _weather == Weather.fog,
+    );
+    _look.update(_sky, _hour.value);
+  }
+
+  /// Projects a sky direction through whichever camera is active.
+  Offset? _projectSky(vm.Vector3 dir, Size size) {
+    if (size.isEmpty) return null;
+    final camera = _mode == _Mode.diorama
+        ? _orbitCamera.toCamera()
+        : _rideCamera.toCamera();
+    final eye = (_mode == _Mode.diorama ? _orbitNode : _rideNode)
+        .globalTransform
+        .getTranslation();
+    return camera.worldToScreen(eye + dir * 6000, size);
   }
 
   void _onTick(Duration elapsed, double frameDt) {
@@ -263,8 +302,16 @@ class _CityViewState extends State<CityView> {
     if (cx != t.x || cz != t.z) _orbit.target = vm.Vector3(cx, t.y, cz);
 
     _advanceRide(dt);
-    _movers.update(dt, showCars: _mode == _Mode.ride || _orbit.distance < 900);
+    _movers.update(
+      dt,
+      showCars: _mode == _Mode.ride || _orbit.distance < 900,
+      night: _sky.night > 0.5,
+    );
     _clock.value += dt;
+    if (_playing) _hour.value = (_hour.value + dt / _secondsPerHour) % 24;
+    if (_hour.value != _sky.hour) _updateSky();
+    _lamps.update(_clock.value, _sky.night);
+    _crowns.update(_clock.value, _sky.night);
     final eye = _mode == _Mode.diorama
         ? _orbitNode.globalTransform.getTranslation()
         : _rideNode.globalTransform.getTranslation();
@@ -361,14 +408,19 @@ class _CityViewState extends State<CityView> {
     return Stack(
       fit: StackFit.expand,
       children: [
-        DecoratedBox(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: _look.backdrop,
-            ),
-          ),
+        // The sky, painted behind the 3D view (which clears transparent).
+        LayoutBuilder(
+          builder: (context, c) {
+            return CustomPaint(
+              size: c.biggest,
+              painter: SkyPainter(
+                state: () => _sky,
+                project: _projectSky,
+                time: () => _clock.value,
+                repaint: _clock,
+              ),
+            );
+          },
         ),
         if (_mode == _Mode.diorama)
           CameraControls(controller: _orbit, child: view)
@@ -388,10 +440,7 @@ class _CityViewState extends State<CityView> {
           Positioned.fill(
             child: IgnorePointer(
               child: CustomPaint(
-                painter: _RainPainter(
-                  _clock,
-                  night: _time == TimeOfDayMode.night,
-                ),
+                painter: _RainPainter(_clock, night: _sky.night > 0.5),
               ),
             ),
           ),
@@ -452,35 +501,7 @@ class _CityViewState extends State<CityView> {
             selected: {_mode},
             onSelectionChanged: (s) => setState(() => _mode = s.first),
           ),
-          SegmentedButton<TimeOfDayMode>(
-            style: _barButtonStyle,
-            showSelectedIcon: false,
-            segments: [
-              ButtonSegment(
-                value: TimeOfDayMode.day,
-                icon: const Icon(Icons.wb_sunny_outlined),
-                label: wide ? const Text('Day') : null,
-                tooltip: 'Day',
-              ),
-              ButtonSegment(
-                value: TimeOfDayMode.sunset,
-                icon: const Icon(Icons.wb_twilight),
-                label: wide ? const Text('Sunset') : null,
-                tooltip: 'Sunset',
-              ),
-              ButtonSegment(
-                value: TimeOfDayMode.night,
-                icon: const Icon(Icons.nightlight_outlined),
-                label: wide ? const Text('Night') : null,
-                tooltip: 'Night',
-              ),
-            ],
-            selected: {_time},
-            onSelectionChanged: (s) {
-              setState(() => _time = s.first);
-              _applyLook();
-            },
-          ),
+          _timeControl(wide),
           SegmentedButton<Weather>(
             style: _barButtonStyle,
             showSelectedIcon: false,
@@ -530,6 +551,60 @@ class _CityViewState extends State<CityView> {
       ),
     );
   }
+
+  /// Play/pause plus a time-of-day slider with quick sunrise/sunset/night
+  /// jumps. The slider listens to the clock directly so the rest of the
+  /// bar doesn't rebuild every frame while the day plays.
+  Widget _timeControl(bool wide) => DecoratedBox(
+    decoration: BoxDecoration(
+      color: Colors.white.withValues(alpha: 0.88),
+      borderRadius: BorderRadius.circular(24),
+    ),
+    child: Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          IconButton(
+            tooltip: _playing ? 'Pause the day' : 'Play the day',
+            icon: Icon(_playing ? Icons.pause : Icons.play_arrow),
+            onPressed: () => setState(() => _playing = !_playing),
+          ),
+          SizedBox(
+            width: wide ? 220 : 130,
+            child: ValueListenableBuilder<double>(
+              valueListenable: _hour,
+              builder: (context, h, _) =>
+                  Slider(value: h, max: 24, onChanged: (v) => _hour.value = v),
+            ),
+          ),
+          ValueListenableBuilder<double>(
+            valueListenable: _hour,
+            builder: (context, h, _) => SizedBox(
+              width: 44,
+              child: Text(
+                '${h.floor().toString().padLeft(2, '0')}:'
+                '${((h % 1) * 60).floor().toString().padLeft(2, '0')}',
+                style: const TextStyle(
+                  fontFeatures: [FontFeature.tabularFigures()],
+                ),
+              ),
+            ),
+          ),
+          for (final (icon, hour, tip) in [
+            (Icons.wb_twilight, 17.6, 'Sunset'),
+            (Icons.nightlight_outlined, 21.0, 'Night'),
+            (Icons.wb_sunny_outlined, 12.5, 'Noon'),
+          ])
+            IconButton(
+              tooltip: tip,
+              icon: Icon(icon, size: 20),
+              onPressed: () => _hour.value = hour,
+            ),
+        ],
+      ),
+    ),
+  );
 
   Widget _landmarkStrip(CityData city) => SizedBox(
     height: 40,

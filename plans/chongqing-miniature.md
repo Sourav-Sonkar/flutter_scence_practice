@@ -154,3 +154,25 @@ Asset size: 3.7 MB. Runs at 60 FPS on the iOS simulator on High.
 - **District 2, Jialing riverside** (lat 29.548–29.572, lon 106.515–106.570): People's
   Square and the Great Hall, Liziba, and the elevated Line 2 monorail ride. Needs the app
   to load several districts side by side.
+
+## Third round (2026-11-05): day cycle and natural night
+
+- **Day cycle**: a time slider with play/pause (one in-game hour per 10 s) and jumps to
+  sunset, night and noon. The sun's position is computed for Chongqing (29.56° N,
+  106.58° E, UTC+8) and the date, so it rises around 07:15 and sets around 18:05 in early
+  November. Sky, sunlight colour, exposure, fog and glow blend by sun elevation through
+  golden hour, blue hour and night; the moon takes over the shadow light at night.
+- **Sky that works on the web**: drawn behind the 3D view (gradient, sun disc and halo,
+  moon, about 220 faint twinkling stars that fade near the horizon and under cloud).
+  flutter_scene's own procedural sky was being cleared by `EnvironmentSettings.applyTo`,
+  which resets `scene.skybox`.
+- **Natural night**: warm 2,700 to 4,000 K windows dimmed by curtains, a few cool TV glows;
+  offices in soft warm white; windows switch on in stages (dusk, evening peak, late night);
+  navy night sky with a faint warm horizon instead of black; sodium-orange and LED street
+  lamps with a few flickering; animated LED crowns on 23 towers; car head and tail lights;
+  lit river boats.
+- **Smoothness**: lighting values only change when the clock moves, and colour grading only
+  in visible steps (it rebuilds its lookup when touched). Chrome, Medium: about 50 FPS by
+  day and 44 FPS at night, UI thread about 6 to 7 ms.
+- **Open**: sunset could be more dramatic from the default camera angle (sunlit walls face
+  away); the sky only shows when the camera tilts towards the horizon.

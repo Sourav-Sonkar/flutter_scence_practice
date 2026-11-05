@@ -29,6 +29,7 @@ enum DetailType {
   treeGinkgo, // narrow, light yellow-green
   shrub,
   bougainvillea, // magenta, planted along Yuzhong's bridges and roadsides
+  crown, // LED band around the top of a skyscraper, lit at night
 }
 
 typedef Detail = ({
@@ -672,6 +673,7 @@ class CityBuilder {
       );
     }
     _rooftop(roofRing, top, glass, height, hash, id);
+    if (height > 140) _crown(roofRing, top);
     _buildingRings.add(ring);
 
     final name = tags['name:en'] ?? tags['name'];
@@ -723,6 +725,50 @@ class CityBuilder {
             (176, 120, 96),
           ][(hash * 31).floor() % 3];
     return (base, roof);
+  }
+
+  /// An LED band hugging the top of a tall tower. The band is the tower's
+  /// footprint fitted with an oriented box (principal axes), so it follows
+  /// rotated towers instead of an axis-aligned square.
+  void _crown(List<P2> ring, double top) {
+    var cx = 0.0, cz = 0.0;
+    for (final (x, z) in ring) {
+      cx += x;
+      cz += z;
+    }
+    cx /= ring.length;
+    cz /= ring.length;
+    var sxx = 0.0, szz = 0.0, sxz = 0.0;
+    for (final (x, z) in ring) {
+      sxx += (x - cx) * (x - cx);
+      szz += (z - cz) * (z - cz);
+      sxz += (x - cx) * (z - cz);
+    }
+    final angle = 0.5 * atan2(2 * sxz, sxx - szz);
+    final ux = cos(angle), uz = sin(angle);
+    var minA = double.infinity, maxA = -double.infinity;
+    var minB = double.infinity, maxB = -double.infinity;
+    for (final (x, z) in ring) {
+      final a = (x - cx) * ux + (z - cz) * uz;
+      final b = -(x - cx) * uz + (z - cz) * ux;
+      minA = min(minA, a);
+      maxA = max(maxA, a);
+      minB = min(minB, b);
+      maxB = max(maxB, b);
+    }
+    final midA = (minA + maxA) / 2, midB = (minB + maxB) / 2;
+    _details.add((
+      type: DetailType.crown,
+      x: cx + ux * midA - uz * midB,
+      y: top - 4,
+      z: cz + uz * midA + ux * midB,
+      sx: maxA - minA + 0.6,
+      sy: 2.5,
+      sz: maxB - minB + 0.6,
+      // Rotation about +Y that maps local x onto the principal axis.
+      rot: -angle,
+    ));
+    _count('led crowns');
   }
 
   /// Scatters rooftop items inside [ring] at height [y].
