@@ -8,6 +8,7 @@ import 'package:vector_math/vector_math.dart' as vm;
 
 import 'city_data.dart';
 import 'city_look.dart';
+import 'clouds.dart';
 import 'crowns.dart';
 import 'detail_chunks.dart';
 import 'facade_textures.dart';
@@ -48,6 +49,7 @@ class _CityViewState extends State<CityView> {
   late final DetailChunks _vegetation;
   late final CityLook _look;
   late final StreetLamps _lamps;
+  CloudTextures? _clouds;
   late final LedCrowns _crowns;
 
   /// Local clock time in hours (0-24). Starts on a warm afternoon.
@@ -113,6 +115,7 @@ class _CityViewState extends State<CityView> {
     try {
       await Scene.initializeStaticResources();
       final city = await CityData.load(widget.district);
+      _clouds = await CloudTextures.load();
       _build(city);
       if (mounted) setState(() => _city = city);
     } catch (e, s) {
@@ -195,6 +198,7 @@ class _CityViewState extends State<CityView> {
       towerLights: glassTex.lights,
       roads: roads,
       water: water,
+      riverLevel: city.riverLevel,
     );
     _scene.add(
       Node(
@@ -417,6 +421,16 @@ class _CityViewState extends State<CityView> {
                 state: () => _sky,
                 project: _projectSky,
                 time: () => _clock.value,
+                clouds: () => _clouds,
+                forward: () {
+                  final camera = _mode == _Mode.diorama
+                      ? _orbitCamera.toCamera()
+                      : _rideCamera.toCamera();
+                  return camera.forward;
+                },
+                fovY: () => _mode == _Mode.diorama
+                    ? 45 * vm.degrees2Radians
+                    : 60 * vm.degrees2Radians,
                 repaint: _clock,
               ),
             );

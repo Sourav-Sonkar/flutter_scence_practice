@@ -5,6 +5,8 @@ import 'package:flutter/rendering.dart';
 
 import 'package:vector_math/vector_math.dart' as vm;
 
+import 'clouds.dart';
+
 /// Where the sun is over Chongqing (29.56° N, 106.58° E, UTC+8) at a local
 /// clock time, using the standard solar declination / hour-angle formulas.
 /// Returns the unit direction *towards* the sun: +x east, +y up, +z south.
@@ -108,6 +110,26 @@ class SkyState {
     environment = 0.06 + 0.69 * _smooth(-4, 22, e);
     fog = _lerp(horizon, zenith, 0.25);
 
+    // Clouds: a few fair-weather ones on clear days, a flat pale layer in
+    // fog, a full dark deck in rain.
+    final raining = overcast && !foggy;
+    cloudCover = raining ? 1.0 : (foggy ? 0.6 : 0.34);
+    cloudOvercast = overcast ? 1.0 : 0.0;
+    // Lit by the sun by day (gold at sunset), by the city's orange glow at
+    // night; undersides darker and cooler.
+    final dayLit = _lerp(vm.Vector3(1.0, 0.98, 0.95), sunColor * 1.1, golden);
+    final nightLit = vm.Vector3(0.06, 0.045, 0.04);
+    cloudLit = _lerp(dayLit, nightLit, night);
+    cloudShade = _lerp(
+      _lerp(vm.Vector3(0.62, 0.66, 0.74), sunColor * 0.55, golden * 0.6),
+      vm.Vector3(0.025, 0.026, 0.04),
+      night,
+    );
+    if (raining) {
+      cloudLit = cloudLit * 0.55;
+      cloudShade = cloudShade * 0.45;
+    }
+
     if (overcast) {
       final grey = _lerp(
         vm.Vector3(0.62, 0.65, 0.68),
@@ -126,6 +148,8 @@ class SkyState {
   late final double elevation;
   late final double night;
   late final double golden;
+  late final double cloudCover, cloudOvercast;
+  late vm.Vector3 cloudLit, cloudShade;
   late final double stars;
   late vm.Vector3 zenith, horizon, fog;
   late final vm.Vector3 sunColor;
@@ -156,8 +180,17 @@ class SkyPainter extends CustomPainter {
     required this.state,
     required this.project,
     required this.time,
+    required this.clouds,
+    required this.forward,
+    required this.fovY,
     required super.repaint,
   });
+
+  final CloudTextures? Function() clouds;
+
+  /// The camera's view direction, for laying clouds around the horizon.
+  final vm.Vector3 Function() forward;
+  final double Function() fovY;
 
   final SkyState Function() state;
 
@@ -267,6 +300,7 @@ class SkyPainter extends CustomPainter {
         )!;
         final fade =
             ((s.elevation + 3) / 4).clamp(0.0, 1.0) *
+            (1 - 0.85 * s.cloudOvercast) *
             (s.sunIntensity > 0.5 ? 1 : 0.4);
         canvas.drawCircle(
           p,
@@ -287,6 +321,29 @@ class SkyPainter extends CustomPainter {
         );
       }
     }
+
+    _paintClouds(canvas, size, s, horizonY);
+  }
+
+  void _paintClouds(Canvas canvas, Size size, SkyState s, double horizonY) {
+    final tex = clouds();
+    if (tex == null) return;
+    final f = forward();
+    paintClouds(
+      canvas,
+      size,
+      tex: tex,
+      style: CloudStyle(
+        coverage: s.cloudCover,
+        overcast: s.cloudOvercast,
+        lit: SkyState.display(s.cloudLit, s.exposure),
+        shade: SkyState.display(s.cloudShade, s.exposure),
+      ),
+      horizonY: horizonY,
+      heading: atan2(f.x, -f.z),
+      fovY: fovY(),
+      time: time(),
+    );
   }
 
   @override

@@ -24,7 +24,11 @@ class CityLook {
     required this.towerLights,
     required this.roads,
     required this.water,
+    required this.riverLevel,
   });
+
+  /// River surface height: river fog is thickest here.
+  final double riverLevel;
 
   final Scene scene;
   final PhysicallyBasedMaterial homes, towers, roads, water;
@@ -124,9 +128,39 @@ class CityLook {
     scene
       ..exposure = sky.exposure
       ..environmentIntensity = sky.environment;
-    scene.fog
-      ..color = sky.fog
-      ..density = fog ? 0.0009 : (rain ? 0.00035 : 0.00005 + 0.00004 * night);
+    // Chongqing fog is river fog: thick down at the water and in the low
+    // streets, thinning with height so the towers rise out of it. At night
+    // it picks up the orange of the street lights.
+    final cityGlow = vm.Vector3(0.13, 0.09, 0.065) * night;
+    if (fog) {
+      scene.fog
+        ..color = sky.fog * 0.85 + cityGlow
+        ..height = riverLevel + 5
+        ..heightFalloff = 0.014
+        ..density = 0.0042
+        ..maxOpacity = 0.96
+        ..sunInScatter = 0.9 * (1 - night)
+        ..sunInScatterExponent = 6;
+    } else if (rain) {
+      scene.fog
+        ..color = sky.fog + cityGlow * 0.6
+        ..height = riverLevel + 20
+        ..heightFalloff = 0.006
+        ..density = 0.0006
+        ..maxOpacity = 0.85
+        ..sunInScatter = 0
+        ..sunInScatterExponent = 8;
+    } else {
+      // Clear: only a light aerial haze with distance.
+      scene.fog
+        ..color = sky.fog + cityGlow * 0.4
+        ..height = 0
+        ..heightFalloff = 0
+        ..density = 0.00005 + 0.00004 * night
+        ..maxOpacity = 1
+        ..sunInScatter = 0.35 * (1 - night)
+        ..sunInScatterExponent = 10;
+    }
 
     // Colour grading rebuilds its lookup when touched, so only change it in
     // visible steps.

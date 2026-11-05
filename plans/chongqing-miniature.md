@@ -176,3 +176,17 @@ Asset size: 3.7 MB. Runs at 60 FPS on the iOS simulator on High.
   day and 44 FPS at night, UI thread about 6 to 7 ms.
 - **Open**: sunset could be more dramatic from the default camera angle (sunlit walls face
   away); the sky only shows when the camera tilts towards the horizon.
+
+## Fourth round (2026-11-05): clouds and realistic fog
+
+- **Clouds**: flutter_scene has no cloud feature, only a noise generator, and that noise
+  overflows on the web. So `tool/chongqing/clouds.dart` bakes two seamless cloud textures
+  natively (puffy cumulus, layered stratus, about 45 KB each). The sky painter draws them as
+  drifting bands that stay fixed in the world as the camera orbits. Clear: scattered
+  clouds. Fog: a pale layer. Rain: a full dark deck that hides sun, moon and stars. Clouds
+  take the sun's colour at golden hour and the city's orange glow at night.
+- **Fog**: real height fog, thickest at the river and fading with altitude (falloff
+  0.014/m), so towers rise out of it, with glow toward the sun by day and a sodium-orange
+  tint at night. Rain uses a lighter, higher haze.
+- Chrome, Medium: about 35 to 45 FPS across clear, fog, rain and night.
+- **Later**: cloud shadows on the city; a more dramatic sunset.
