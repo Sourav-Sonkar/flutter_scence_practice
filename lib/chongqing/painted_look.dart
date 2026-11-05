@@ -36,6 +36,7 @@ class PaintedLook {
           .setTexture(name, t.sampledTexture!, sampler: t.sampledSampler);
       tex(mats['buildings']!, 'facade', home.color);
       tex(mats['towers']!, 'facade', glass.color);
+      mats['structures']!.doubleSided = true; // wires, deck undersides
       // Windows read clearly on buildings; glass towers reflect the sky.
       mats['buildings']!.parameters
         ..setFloat('detail', 1.0)
@@ -81,6 +82,7 @@ class PaintedLook {
       return realistic;
     }
     final twin = _pool.removeLast();
+    twin.doubleSided = realistic.doubleSided; // wires stay visible
     final c = realistic.baseColorFactor;
     twin.parameters.setVec4('tint', c);
     if (c.y > c.x * 1.15 && c.y > c.z * 1.15) {

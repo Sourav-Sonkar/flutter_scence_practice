@@ -77,6 +77,8 @@ class DistrictScene {
     'shrub',
     'planter',
     'streetLamp',
+    'powerPole',
+    'wire',
   };
 
   /// Beyond this distance roads and small structures (piers, rails) are a

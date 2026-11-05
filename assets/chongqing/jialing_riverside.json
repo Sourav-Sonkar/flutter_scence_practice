@@ -6465,11 +6465,13 @@
   "shrub",
   "planter",
   "streetLamp",
-  "crown"
+  "crown",
+  "powerPole",
+  "wire"
  ],
  "details": {
   "offset": 7480584,
-  "count": 38433
+  "count": 47527
  },
  "walk": {
   "walls": {
@@ -53940,6 +53942,8 @@
   "plants shrub": 594,
   "bridge planters": 2572,
   "street lamps": 1648,
+  "power poles": 2689,
+  "wire spans": 2135,
   "boat lanes": 5
  }
 }

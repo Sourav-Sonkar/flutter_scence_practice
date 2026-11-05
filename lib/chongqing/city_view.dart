@@ -249,7 +249,8 @@ class _CityViewState extends State<CityView> {
       'buildings': homes,
       'towers': towers,
       'roads': roads,
-      'structures': _pbr(0.6),
+      // Double-sided so thin wires and deck undersides show from any side.
+      'structures': _pbr(0.6)..doubleSided = true,
     };
     _materials = materials;
 

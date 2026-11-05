@@ -31,6 +31,10 @@ enum DetailType {
   planter, // long, low green planter boxes along bridge railings
   streetLamp, // pole at the road edge; local +x is the arm, pointing at the road
   crown, // LED band around the top of a skyscraper, lit at night
+  powerPole, // utility pole; local +x is the crossarm (across the street)
+  // A sagging cable. Encoded differently from other details: position is
+  // one end, size is the vector to the other end, rotation is the sag.
+  wire,
 }
 
 typedef Detail = ({
@@ -395,6 +399,7 @@ class CityBuilder {
     }
     final ground = _terrainLayer(covers);
     _vegetation(covers, built, paved);
+    _powerLines(built);
     return CityBuild(
         [ground, homes, towers, roads, structures],
         rides,
@@ -1185,6 +1190,91 @@ class CityBuilder {
       }
       prevL = l;
       prevR = r;
+    }
+  }
+
+  // ---- power lines ----
+
+  /// Utility poles with sagging wires along the smaller streets, the
+  /// overhead tangle that defines Chongqing's (and many hillside towns')
+  /// older neighbourhoods.
+  void _powerLines(Mask built) {
+    const streets = {
+      'residential',
+      'unclassified',
+      'tertiary',
+      'living_street',
+      'service',
+      'secondary',
+    };
+    const spacing = 35.0, poleHeight = 9.0;
+    for (final r in _roadRuns) {
+      if (r.bridge || !streets.contains(r.kind) || r.pts.length < 4) continue;
+      // Poles every [spacing] metres on one side of the street.
+      final poles = <(V3, double, double)>[]; // top, across-x, across-z
+      var since = spacing; // start with a pole
+      for (var k = 1; k < r.pts.length - 1; k++) {
+        since += sqrt(
+          pow(r.pts[k].$1 - r.pts[k - 1].$1, 2) +
+              pow(r.pts[k].$2 - r.pts[k - 1].$2, 2),
+        );
+        if (since < spacing) continue;
+        var dx = r.pts[k + 1].$1 - r.pts[k - 1].$1,
+            dz = r.pts[k + 1].$2 - r.pts[k - 1].$2;
+        final len = sqrt(dx * dx + dz * dz);
+        if (len < 1e-6) continue;
+        dx /= len;
+        dz /= len;
+        final nx = -dz, nz = dx; // across the street
+        final off = r.half + 1.2;
+        final x = r.pts[k].$1 + nx * off, z = r.pts[k].$2 + nz * off;
+        if (!_inside(x, z) || built.at(x, z)) {
+          poles.add(((double.nan, 0.0, 0.0), 0, 0)); // gap: no wire across
+          continue;
+        }
+        since = 0;
+        final g = terrain.heightAt(x, z);
+        _details.add((
+          type: DetailType.powerPole,
+          x: x,
+          y: g,
+          z: z,
+          sx: 1,
+          sy: poleHeight,
+          sz: 1,
+          rot: atan2(-nz, nx), // local +x along the crossarm
+        ));
+        poles.add(((x, g + poleHeight - 0.4, z), nx, nz));
+        _count('power poles');
+      }
+      for (var i = 1; i < poles.length; i++) {
+        final (a, ax, az) = poles[i - 1];
+        final (b, bx, bz) = poles[i];
+        if (a.$1.isNaN || b.$1.isNaN) continue;
+        final dist = sqrt(pow(b.$1 - a.$1, 2) + pow(b.$3 - a.$3, 2));
+        if (dist > spacing * 2.2) continue;
+        final sag = 0.35 + dist * 0.015;
+        void cable(V3 p, V3 q, double sag) => _details.add((
+          type: DetailType.wire,
+          x: p.$1,
+          y: p.$2,
+          z: p.$3,
+          sx: q.$1 - p.$1,
+          sy: q.$2 - p.$2,
+          sz: q.$3 - p.$3,
+          rot: sag,
+        ));
+        for (final o in [-0.85, 0.85]) {
+          cable(
+            (a.$1 + ax * o, a.$2, a.$3 + az * o),
+            (b.$1 + bx * o, b.$2, b.$3 + bz * o),
+            sag,
+          );
+        }
+        // A lower telecom cable on the pole itself.
+        cable((a.$1, a.$2 - 1.6, a.$3), (b.$1, b.$2 - 1.6, b.$3), sag * 1.3);
+        _count('wire spans');
+      }
     }
   }
 

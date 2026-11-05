@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'dart:math';
 
 import 'package:flutter_scene/scene.dart';
@@ -36,26 +37,7 @@ class DetailChunks {
             material: part.material,
           );
           for (final d in items) {
-            // Each part is a unit shape: scaled by a fraction of the item's
-            // size and lifted so it sits on the ground or roof.
-            final size = vm.Vector3(
-              d.size.x * part.scale.x,
-              d.size.y * part.scale.y,
-              d.size.z * part.scale.z,
-            );
-            final rot = vm.Quaternion.axisAngle(
-              vm.Vector3(0, 1, 0),
-              d.rotation,
-            );
-            mesh.addInstance(
-              vm.Matrix4.compose(
-                d.position +
-                    vm.Vector3(0, d.size.y * part.lift, 0) +
-                    rot.rotated(vm.Vector3(part.side, 0, 0)),
-                rot,
-                size,
-              ),
-            );
+            mesh.addInstance(transformFor(type, part, d));
           }
           tile.add(
             Node(name: type)
@@ -120,6 +102,60 @@ class DetailChunks {
     }
   }
 
+  /// A part's transform for one item. Wires are special: position is one
+  /// end, size is the vector to the other end and rotation is the sag, so
+  /// one shared unit strip stretches exactly between two poles.
+  static vm.Matrix4 transformFor(
+    String type,
+    ({
+      Geometry geometry,
+      Material material,
+      vm.Vector3 scale,
+      double lift,
+      double side,
+    })
+    part,
+    Detail d,
+  ) {
+    if (type == 'wire') {
+      final dx = d.size.x, dz = d.size.z;
+      final len = sqrt(dx * dx + dz * dz);
+      final wx = len < 1e-6 ? 1.0 : -dz / len, wz = len < 1e-6 ? 0.0 : dx / len;
+      // Columns: tilted width axis, sag (down), span; translation = start.
+      return vm.Matrix4(
+        wx * 0.707,
+        0.707,
+        wz * 0.707,
+        0, //
+        0,
+        d.rotation,
+        0,
+        0,
+        dx,
+        d.size.y,
+        dz,
+        0,
+        d.position.x,
+        d.position.y,
+        d.position.z,
+        1,
+      );
+    }
+    final size = vm.Vector3(
+      d.size.x * part.scale.x,
+      d.size.y * part.scale.y,
+      d.size.z * part.scale.z,
+    );
+    final rot = vm.Quaternion.axisAngle(vm.Vector3(0, 1, 0), d.rotation);
+    return vm.Matrix4.compose(
+      d.position +
+          vm.Vector3(0, d.size.y * part.lift, 0) +
+          rot.rotated(vm.Vector3(part.side, 0, 0)),
+      rot,
+      size,
+    );
+  }
+
   Node _partNode(
     String type,
     ({
@@ -135,21 +171,7 @@ class DetailChunks {
   ) {
     final mesh = InstancedMesh(geometry: part.geometry, material: material);
     for (final d in items) {
-      final size = vm.Vector3(
-        d.size.x * part.scale.x,
-        d.size.y * part.scale.y,
-        d.size.z * part.scale.z,
-      );
-      final rot = vm.Quaternion.axisAngle(vm.Vector3(0, 1, 0), d.rotation);
-      mesh.addInstance(
-        vm.Matrix4.compose(
-          d.position +
-              vm.Vector3(0, d.size.y * part.lift, 0) +
-              rot.rotated(vm.Vector3(part.side, 0, 0)),
-          rot,
-          size,
-        ),
-      );
+      mesh.addInstance(transformFor(type, part, d));
     }
     return Node(name: type)
       ..castsShadows = castsShadows
@@ -254,6 +276,27 @@ class DetailChunks {
     ),
   ];
 
+  /// A unit sagging strip: from z = 0 to z = 1, dipping to y = -1 at the
+  /// middle (a parabola, close to a hanging cable), 0.1 wide along x.
+  static final Geometry _wireStrip = () {
+    const segments = 6;
+    final positions = <double>[];
+    final indices = <int>[];
+    for (var i = 0; i <= segments; i++) {
+      final t = i / segments;
+      final v = -4 * t * (1 - t);
+      positions.addAll([-0.05, v, t, 0.05, v, t]);
+      if (i > 0) {
+        final a = (i - 1) * 2, b = a + 1, c = a + 3, d = a + 2;
+        indices.addAll([a, b, c, a, c, d]);
+      }
+    }
+    return MeshGeometry.fromArrays(
+      positions: Float32List.fromList(positions),
+      indices: indices,
+    );
+  }();
+
   // Unit-sized shapes; each instance is scaled to its item's size.
   static final Map<
     String,
@@ -282,6 +325,21 @@ class DetailChunks {
         ),
         _mat(0.22, 0.32, 0.28),
       ),
+    ],
+    // Utility pole (9 m) with a 2 m crossarm across the street.
+    'powerPole': [
+      _part(_box, _mat(0.36, 0.34, 0.32, rough: 0.8), sx: 0.26, sz: 0.26),
+      _part(
+        _box,
+        _mat(0.36, 0.34, 0.32, rough: 0.8),
+        sx: 2.0,
+        sy: 0.016,
+        sz: 0.14,
+        lift: 0.946,
+      ),
+    ],
+    'wire': [
+      _part(_wireStrip, _mat(0.07, 0.07, 0.08, rough: 0.6)..doubleSided = true),
     ],
     'mast': [_part(_box, _mat(0.82, 0.2, 0.18, rough: 0.5))],
     // Huangge (Ficus virens), Chongqing's city tree: wide, low, dark canopy.
