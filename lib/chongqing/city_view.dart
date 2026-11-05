@@ -16,6 +16,7 @@ import 'street_lamps.dart' show RainPainter;
 import 'facade_textures.dart';
 import 'joystick.dart';
 import 'painted_look.dart';
+import 'painterly_filter.dart';
 import 'ride_vehicles.dart';
 import 'sky.dart';
 import 'drone.dart';
@@ -44,6 +45,7 @@ class _CityViewState extends State<CityView> {
 
   // Style: realistic PBR or the hand-painted, anime-inspired look.
   PaintedLook? _paintedLook;
+  PainterlyFilter? _painterly;
   bool _painted = false;
   late final FacadeTextures _homeTex, _glassTex;
   Map<String, Material> get _activeMaterials =>
@@ -162,6 +164,7 @@ class _CityViewState extends State<CityView> {
       }
       _build(city);
       _paintedLook = await PaintedLook.load(_homeTex, _glassTex);
+      _painterly = await PainterlyFilter.attach(_scene);
       _city = city;
       // Load the districts around the starting view before showing it;
       // the rest stream in as the camera moves.
@@ -335,6 +338,7 @@ class _CityViewState extends State<CityView> {
       d.setMaterials(mats);
     }
     _look.painted = painted;
+    _painterly?.enabled = painted;
     _applyLook(); // reconfigures the grade and pushes sky + paint params
   }
 

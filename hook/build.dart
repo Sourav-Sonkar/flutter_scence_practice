@@ -1,4 +1,5 @@
 import 'package:flutter_scene/build_hooks.dart';
+import 'package:flutter_gpu_shaders/build.dart';
 import 'package:hooks/hooks.dart';
 
 void main(List<String> args) async {
@@ -11,5 +12,11 @@ void main(List<String> args) async {
     // loadFmatMaterial (and hot-reloadable). A no-op when there are none.
     await buildMaterials(buildInput: input, buildOutput: output);
 // flutter_scene:init:end
+    // The Chongqing city's painterly post-process filter (shaders/).
+    await buildShaderBundleJson(
+      buildInput: input,
+      buildOutput: output,
+      manifestFileName: 'shaders/painterly.shaderbundle.json',
+    );
   });
 }

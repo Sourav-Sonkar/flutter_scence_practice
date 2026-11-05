@@ -1,0 +1,6 @@
+{
+  "PainterlyFragment": {
+    "type": "fragment",
+    "file": "shaders/painterly.frag"
+  }
+}

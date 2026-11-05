@@ -316,3 +316,25 @@ not after any studio, to avoid trademark issues).
 - **Next for Painted**: soft outlines; paper / brush texture; painted trees, details and
   vehicles (still realistic materials); a painted water shader; brighter noon (the sun
   overhead flattens the shading); night speed (skip the engine lighting cost).
+
+## Painted style, round 2: Whisper of the Heart direction (2026-11-05)
+
+Feedback: the first prototype read as a clean pastel 3D model, not a hand-painted film
+background. Target mood chosen: **Whisper of the Heart, summer afternoon** (a hillside
+town of stairways, apartment blocks and overhead wires, close to Chongqing).
+
+What makes that look, by impact (outlines dropped: those films outline characters, not
+backgrounds):
+1. **Painterly filter** - done: `shaders/painterly.frag`, a full-screen Kuwahara filter
+   (calmest of four quadrants, 4x4 samples each, ~6 px brush) plus paper grain and soft
+   mottling, run after tone mapping as a flutter_scene `PostEffect`. Compiled by
+   `hook/build.dart` (`buildShaderBundleJson`) and listed in pubspec assets as
+   `build/shaderbundles/painterly.shaderbundle`; loaded by asset path (flutter_scene's
+   `resolveShaderBundleKey` only finds bundles in its own generated tree). On only in
+   Painted mode. Chrome, Medium: about 29 FPS.
+2. Painted foliage: clumpy masses in several greens, dark hollows, sunlit yellow-green tops.
+3. Painted sky: saturated cobalt, towering cumulus banks on the horizon, stronger blue
+   layering into the distance.
+4. Street life: power lines along roads, signboards, awnings, laundry, lanterns at night.
+5. Eye-level postcard views (stairway lane, riverside at dusk) and low drone flight.
+6. Golden-hour default in Painted mode, with sunbeams.
