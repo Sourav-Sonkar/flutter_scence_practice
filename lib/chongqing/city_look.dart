@@ -39,6 +39,11 @@ class CityLook {
   /// The shader sky (assets/chongqing/sky.fmat), once loaded. Applying
   /// EnvironmentSettings clears Scene.skybox, so it is re-attached after.
   Skybox? skybox;
+
+  /// The same sky baked into the scene's image-based lighting, so water and
+  /// glass reflect the real sky (clouds, dusk colours, city glow) instead of
+  /// the default studio map. Re-baked only when the sky visibly changes.
+  SkyEnvironment? skyLighting;
   int _lightLevel = -1;
   double _lastHour = -1;
   double _gradeSat = -1, _gradeTemp = -1, _emissive = -1;
@@ -71,8 +76,19 @@ class CityLook {
       ambientOcclusionMethod: AmbientOcclusionMethod.groundTruth,
       ambientOcclusionRadius: 6,
       ambientOcclusionIntensity: 1.2,
-      screenSpaceReflectionsEnabled: high,
-      screenSpaceReflectionsMaxDistance: 600,
+      // Water reflections. Physically, water seen from this high diorama
+      // angle reflects only ~5-10% (Fresnel), far weaker than the low-angle
+      // night photos of Chongqing, so the strength is boosted. Medium traces
+      // at half resolution with fewer steps so the web keeps its frame rate.
+      screenSpaceReflectionsEnabled: high || medium,
+      screenSpaceReflectionsIntensity: 4.5,
+      screenSpaceReflectionsMaxDistance: 2500,
+      screenSpaceReflectionsThickness: 4,
+      screenSpaceReflectionsStride: high ? 6 : 10,
+      screenSpaceReflectionsMaxSteps: high ? 128 : 64,
+      screenSpaceReflectionsBlur: 0.15,
+      screenSpaceReflectionsDistanceFadeStart: 0.6,
+      screenSpaceReflectionsResolutionScale: high ? 1.0 : 0.5,
       // Always on: at night the glow is what makes the city.
       bloomEnabled: true,
       bloomScatter: 0.75,
@@ -86,7 +102,9 @@ class CityLook {
       depthOfFieldMaxBackgroundBlur: 28,
       vignetteEnabled: true,
     );
+    // EnvironmentSettings.applyTo clears both, so re-attach them.
     if (skybox != null) scene.skybox = skybox;
+    if (skyLighting != null) scene.skyEnvironment = skyLighting;
     scene.renderScale = switch (quality) {
       Quality.high => 1.0,
       Quality.medium => 0.8,

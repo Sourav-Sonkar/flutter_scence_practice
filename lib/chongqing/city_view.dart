@@ -143,7 +143,8 @@ class _CityViewState extends State<CityView> {
       ..baseColorTexture = homeTex.color
       ..emissiveTexture = homeTex.lights.first;
     // Glass towers: smoother so they pick up the sky.
-    final towers = _pbr(0.4)
+    // Rough enough that boosted water reflections don't turn towers to mirrors.
+    final towers = _pbr(0.5)
       ..metallicFactor = 0.1
       ..baseColorTexture = glassTex.color
       ..emissiveTexture = glassTex.lights.first;
@@ -195,7 +196,8 @@ class _CityViewState extends State<CityView> {
 
     // River surface, a little larger than the district so edges stay wet.
     final size = city.bounds.max - city.bounds.min;
-    final water = _pbr(0.06, vm.Vector4(0.12, 0.18, 0.19, 1));
+    // Dark and very smooth: the river is mostly what it reflects.
+    final water = _pbr(0.03, vm.Vector4(0.05, 0.075, 0.08, 1));
     _look = CityLook(
       scene: _scene,
       homes: homes,
@@ -267,7 +269,11 @@ class _CityViewState extends State<CityView> {
         _scene.add(n);
       }
     }
-    if (_shaderSky != null) _look.skybox = Skybox(_shaderSky!);
+    if (_shaderSky != null) {
+      _look
+        ..skybox = Skybox(_shaderSky!)
+        ..skyLighting = SkyEnvironment(_shaderSky!, faceResolution: 64);
+    }
     _applyLook();
   }
 
@@ -310,7 +316,15 @@ class _CityViewState extends State<CityView> {
       ..setVec3('cloud_lit', s.cloudLit)
       ..setVec3('cloud_shade', s.cloudShade)
       ..setFloat('detail', _q == Quality.low ? 3 : 5);
+    // Re-bake the sky lighting only when the sky has visibly changed.
+    final key = (_hour.value * 6).round() * 10 + _weather.index;
+    if (key != _bakedSkyKey) {
+      _bakedSkyKey = key;
+      _look.skyLighting?.invalidate();
+    }
   }
+
+  int _bakedSkyKey = -1;
 
   /// Projects a sky direction through whichever camera is active.
   Offset? _projectSky(vm.Vector3 dir, Size size) {
