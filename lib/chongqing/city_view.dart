@@ -99,8 +99,14 @@ class _CityViewState extends State<CityView> {
   PreprocessedSky? _shaderSky;
 
   /// Local clock time in hours (0-24). Starts on a warm afternoon.
-  final ValueNotifier<double> _hour = ValueNotifier(15.5);
+  static const double _startHour = 15.5;
+  final ValueNotifier<double> _hour = ValueNotifier(_startHour);
   bool _playing = false;
+
+  /// Painted mode opens on golden hour (sun about 8 degrees up: warm, long
+  /// shadows, lights still off) while the clock is still at its start time,
+  /// so a time the viewer has picked is kept.
+  static const double _paintedHour = 17.35;
 
   /// One in-game hour passes in this many real seconds while playing.
   static const double _secondsPerHour = 10;
@@ -339,6 +345,7 @@ class _CityViewState extends State<CityView> {
 
   void _setPainted(bool painted) {
     setState(() => _painted = painted);
+    if (painted && _hour.value == _startHour) _hour.value = _paintedHour;
     final mats = _activeMaterials;
     for (final d in _districts.values) {
       d.setMaterials(mats);
@@ -475,6 +482,44 @@ class _CityViewState extends State<CityView> {
       _updateDrone(0);
     }
     setState(() => _mode = mode);
+  }
+
+  /// Eye-level postcard views in the Yuzhong tip: where to stand (x, z, eye
+  /// height above the ground or river), what to look at (x, z, height above
+  /// the ground), and the time of day.
+  static const _postcards = [
+    // Minzu Road, the pedestrian street running up to Jiefangbei.
+    (
+      icon: Icons.storefront_outlined,
+      label: 'Pedestrian street',
+      eye: (-470.0, -248.0, 1.8),
+      look: (-625.0, -35.0, 9.0),
+      hour: 16.6,
+    ),
+    // Out on the Jialing, looking back at the Hongyadong cliffside.
+    (
+      icon: Icons.water_outlined,
+      label: 'Riverside at dusk',
+      eye: (-640.0, -930.0, 10.0),
+      look: (-549.0, -558.0, 35.0),
+      hour: 17.85,
+    ),
+  ];
+
+  void _showPostcard(int i) {
+    final p = _postcards[i];
+    final river = _city?.riverLevel ?? 0;
+    double ground(double x, double z) =>
+        max(_walkWorld.terrainAt(x, z) ?? river, river);
+    final (ex, ez, eh) = p.eye;
+    final (lx, lz, lh) = p.look;
+    final eye = vm.Vector3(ex, ground(ex, ez) + eh, ez);
+    final look = vm.Vector3(lx, ground(lx, lz) + lh, lz) - eye;
+    _hour.value = p.hour;
+    _playing = false;
+    _setMode(_Mode.drone);
+    _drone.place(eye, look..normalize(), clearance: eh);
+    _updateDrone(0);
   }
 
   /// Keyboard (WASD / arrows, Space/E up, Q/C down, Shift boost), scroll,
@@ -816,6 +861,13 @@ class _CityViewState extends State<CityView> {
         () => _setPainted(true),
       );
     }
+    if (!_walkWorld.isEmpty) {
+      section('Views');
+      for (var i = 0; i < _postcards.length; i++) {
+        final p = _postcards[i];
+        option(p.icon, p.label, false, () => _showPostcard(i));
+      }
+    }
     section('Quality');
     for (final (q, label) in [
       (Quality.low, 'Low'),
@@ -834,7 +886,7 @@ class _CityViewState extends State<CityView> {
         shape: BoxShape.circle,
       ),
       child: PopupMenuButton<VoidCallback>(
-        tooltip: 'Weather, style and quality',
+        tooltip: 'Weather, style, views and quality',
         icon: const Icon(Icons.more_vert),
         onSelected: (fn) => fn(),
         itemBuilder: (_) => items,

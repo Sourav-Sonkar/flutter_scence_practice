@@ -19,11 +19,16 @@ class Drone {
   static const double minClearance = 18; // above ground, metres
   static const double maxAltitude = 1500; // above the river, metres
 
+  /// Current height kept above the ground. Postcard views sit at eye level;
+  /// once the viewer flies, it eases back up to [minClearance].
+  double clearance = minClearance;
+
   vm.Vector3 get forward =>
       vm.Vector3(sin(yaw) * cos(pitch), sin(pitch), cos(yaw) * cos(pitch));
 
   /// Starts at [eye] looking along [look].
-  void place(vm.Vector3 eye, vm.Vector3 look) {
+  void place(vm.Vector3 eye, vm.Vector3 look, {double? clearance}) {
+    this.clearance = clearance ?? minClearance;
     position.setFrom(eye);
     _velocity.setZero();
     _climb = 0;
@@ -62,12 +67,15 @@ class Drone {
     _velocity.add((want - _velocity) * ease);
     _climb += (lift * cruise * 0.6 - _climb) * min(1.0, dt * 4);
 
+    if (move.length2 > 0 || lift != 0) {
+      clearance += (minClearance - clearance) * min(1.0, dt * 1.5);
+    }
     final next = position + _velocity * dt + vm.Vector3(0, _climb * dt, 0);
 
     // Keep above the ground (and any bridge deck), below the ceiling.
     final floor = world.groundAt(next.x, next.z, next.y) ?? riverLevel;
     next.y = next.y.clamp(
-      max(floor, riverLevel) + minClearance,
+      max(floor, riverLevel) + clearance,
       riverLevel + maxAltitude,
     );
     // Slide around buildings that are taller than the drone.

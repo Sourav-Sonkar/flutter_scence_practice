@@ -1315,7 +1315,7 @@
  ],
  "details": {
   "offset": 2518784,
-  "count": 16406
+  "count": 17270
  },
  "walk": {
   "walls": {
@@ -18122,7 +18122,8 @@
   "street life signBlue": 66,
   "street life signYellow": 70,
   "street life awningCream": 63,
-  "street life lantern": 1271,
+  "street life lantern": 1132,
+  "street life wire": 1003,
   "boat lanes": 4
  }
 }

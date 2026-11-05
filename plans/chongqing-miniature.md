@@ -348,3 +348,18 @@ Signs and lanterns keep their own emissive material in both styles and glow at n
 (`DetailChunks.setNightGlow`). Yuzhong tip: about 190 awnings, 200 signs, 290 laundry
 lines and 1270 lanterns. Assets: 2.90 MB and 8.69 MB. Verified in Chrome by day, at night
 and in Painted mode.
+
+### Golden hour, postcard views, painted glass (done)
+- Painted opens at 17:21 (sun about 8 degrees up) when the clock is still at its start time;
+  a time the viewer chose is kept.
+- Settings menu has a Views section: "Pedestrian street" (eye level on Minzu Road, lanterns
+  overhead) and "Riverside at dusk" (on the Jialing at 17:51, looking at Hongyadong). The
+  drone holds the view's low clearance until the viewer flies, then eases back to 18 m.
+  Stairway spots were tried but sit under road decks at eye level; revisit with the city
+  improvements.
+- Lanterns are now evenly spaced (8 m) on sagging strings, using the wire detail.
+  Assets: 3.07 MB and 9.16 MB.
+- Painted glass towers keep at least 70% glass coverage: far away the window texture blurs
+  to white and they used to fade into a pale evening sky.
+- Web testing note: Chrome caches assets such as `.fmat`; refresh them with
+  `fetch(url, {cache: 'reload'})` before judging a shader change.

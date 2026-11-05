@@ -1329,19 +1329,40 @@ class CityBuilder {
         continue;
       }
       if (rng.next() > 0.45) continue; // not every lane
-      for (var k = 1; k < r.pts.length; k += 2) {
-        final (x, z) = r.pts[k];
-        if (!_inside(x, z)) continue;
-        add(
-          DetailType.lantern,
-          x,
-          terrain.heightAt(x, z) + 4.0,
-          z,
-          0.55,
-          0.7,
-          0.55,
-          0,
-        );
+      // Evenly spaced along the lane, each hanging from a sagging string
+      // tied to the one before.
+      const spacing = 8.0, lift = 4.0;
+      (double, double, double)? prev;
+      var carry = spacing / 2;
+      for (var k = 1; k < r.pts.length; k++) {
+        final (x0, z0) = r.pts[k - 1];
+        final (x1, z1) = r.pts[k];
+        final seg = sqrt((x1 - x0) * (x1 - x0) + (z1 - z0) * (z1 - z0));
+        for (; carry < seg; carry += spacing) {
+          final t = carry / seg;
+          final x = x0 + (x1 - x0) * t, z = z0 + (z1 - z0) * t;
+          if (!_inside(x, z)) {
+            prev = null;
+            continue;
+          }
+          final top = terrain.heightAt(x, z) + lift + 0.45;
+          add(DetailType.lantern, x, top - 0.45, z, 0.55, 0.7, 0.55, 0);
+          final p = prev;
+          if (p != null) {
+            add(
+              DetailType.wire,
+              p.$1,
+              p.$2,
+              p.$3,
+              x - p.$1,
+              top - p.$2,
+              z - p.$3,
+              0.35,
+            );
+          }
+          prev = (x, top, z);
+        }
+        carry -= seg;
       }
     }
   }

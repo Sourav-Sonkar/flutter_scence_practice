@@ -147,13 +147,17 @@ fragment {
       // Glass reads darker and bluer than the sky it reflects, so towers
       // stand out against it rather than dissolving into it.
       vec3 deep = vec3(0.16, 0.26, 0.48);
-      vec3 reflected = mix(deep, sky_tint * vec3(0.5, 0.62, 0.85), 0.35 + 0.35 * height);
+      vec3 reflected = mix(deep, sky_tint * vec3(0.5, 0.62, 0.85), 0.2 + 0.3 * height);
       float streak = smoothstep(0.84, 0.96, fract((pos.x + pos.z) * 0.012 + pos.y * 0.006));
-      reflected += sky_tint * 0.18 * streak;
-      // The tower's own colour shows through, and it still has a lit side.
-      vec3 glass_col = mix(reflected, colour, 0.5) * (0.78 + 0.28 * lit);
-      // Mullions and spandrels stay as the painted wall colour.
-      colour = mix(colour, glass_col, smoothstep(0.92, 0.75, lum));
+      reflected += sky_tint * 0.16 * streak;
+      // The tower's own colour shows through a little, and it still has a
+      // lit side; the shaded side stays a deep blue so towers hold their
+      // shape against a pale evening sky.
+      vec3 glass_col = mix(reflected, colour, 0.3) * (0.68 + 0.36 * lit);
+      // Mullions and spandrels stay as the painted wall colour. Far away the
+      // window texture blurs to near white, so glass keeps a floor of
+      // coverage or distant towers would fade to pale walls.
+      colour = mix(colour, glass_col, max(smoothstep(0.92, 0.75, lum), 0.7));
     }
 
     // Night windows still glow.
