@@ -101,6 +101,13 @@ class DistrictScene {
     }
   }
 
+  /// Switches trees, rooftop details and lamp poles between realistic and
+  /// painted materials.
+  void setPaintedDetails(bool painted, Material Function(Material) paintedFor) {
+    vegetation.setPainted(painted, paintedFor);
+    rooftops.setPainted(painted, paintedFor);
+  }
+
   bool get visible => root.visible;
   set visible(bool v) {
     if (root.visible != v) root.visible = v;

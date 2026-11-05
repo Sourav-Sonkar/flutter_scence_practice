@@ -199,6 +199,9 @@ class _CityViewState extends State<CityView> {
       final data = await CityData.load(name);
       final district = DistrictScene(name, data, _activeMaterials)
         ..setQuality(_q);
+      if (_painted && _paintedLook != null) {
+        district.setPaintedDetails(true, _paintedLook!.detailFor);
+      }
       _walkWorld.add(data.walk);
       _districts[name] = district;
       _scene.add(district.root);
@@ -336,6 +339,8 @@ class _CityViewState extends State<CityView> {
     final mats = _activeMaterials;
     for (final d in _districts.values) {
       d.setMaterials(mats);
+      final look = _paintedLook;
+      if (look != null) d.setPaintedDetails(painted, look.detailFor);
     }
     _look.painted = painted;
     _painterly?.enabled = painted;

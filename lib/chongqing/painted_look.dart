@@ -40,19 +40,49 @@ class PaintedLook {
       for (final k in ['terrain', 'roads']) {
         mats[k]!.parameters.setFloat('saturation', 1.12);
       }
-      return PaintedLook._(
+      final look = PaintedLook._(
         mats,
         mats['buildings']!,
         mats['towers']!,
         home,
         glass,
       );
+      // One twin per distinct detail colour (about 20 today).
+      for (var i = 0; i < 32; i++) {
+        look._pool.add(await one());
+      }
+      return look;
     } catch (_) {
       return null;
     }
   }
 
   final Map<String, PreprocessedMaterial> materials;
+
+  /// Painted twins of detail materials (trees, rooftop items, lamp poles),
+  /// keyed by the realistic material they replace.
+  final Map<Material, PreprocessedMaterial> _details = {};
+  final List<PreprocessedMaterial> _pool = [];
+
+  /// The painted twin of a detail [realistic] material: same colour, and
+  /// leafy greens get the clumpy foliage shading. Created on first use, from
+  /// a preloaded pool so it can be handed out synchronously.
+  Material detailFor(Material realistic) {
+    final existing = _details[realistic];
+    if (existing != null) return existing;
+    if (_pool.isEmpty || realistic is! PhysicallyBasedMaterial) {
+      return realistic;
+    }
+    final twin = _pool.removeLast();
+    final c = realistic.baseColorFactor;
+    twin.parameters.setVec4('tint', c);
+    if (c.y > c.x * 1.15 && c.y > c.z * 1.15) {
+      twin.parameters.setFloat('foliage', 1);
+    }
+    _details[realistic] = twin;
+    return twin;
+  }
+
   final PreprocessedMaterial _home, _tower;
   final FacadeTextures _homeTex, _glassTex;
   int _level = -1;
@@ -70,7 +100,7 @@ class PaintedLook {
         vm.Vector3(0.55, 0.6, 0.95) * night;
     final bounce =
         vm.Vector3(0.55, 0.48, 0.38) * (1 - 0.85 * night) + sky.cityGlow * 2;
-    for (final m in materials.values) {
+    for (final m in [...materials.values, ..._details.values]) {
       m.parameters
         ..setVec3('sky_light', skyLight)
         ..setVec3('shade_tint', shade)

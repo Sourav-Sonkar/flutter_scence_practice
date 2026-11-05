@@ -70,6 +70,7 @@ class DetailChunks {
       });
       tile.visible = false;
       root.add(tile);
+      _items.add((tile, byType));
       _tiles.add((
         tile,
         vm.Vector3(
@@ -82,6 +83,78 @@ class DetailChunks {
   }
 
   final double tileSize;
+
+  final List<(Node, Map<String, List<Detail>>)> _items = [];
+  final List<Node> _realistic = [], _painted = [];
+  bool _paintedBuilt = false;
+
+  /// Switches every item between its realistic and painted material.
+  /// Painted copies are built the first time they're needed (same
+  /// geometry and transforms, painted materials from [paintedFor]).
+  void setPainted(bool painted, Material Function(Material) paintedFor) {
+    if (painted && !_paintedBuilt) {
+      _paintedBuilt = true;
+      for (final (tile, byType) in _items) {
+        for (final child in tile.children.toList()) {
+          _realistic.add(child);
+        }
+        byType.forEach((type, items) {
+          for (final part in _styles[type] ?? const []) {
+            final node = _partNode(
+              type,
+              part,
+              items,
+              paintedFor(part.material),
+            );
+            _painted.add(node);
+            tile.add(node);
+          }
+        });
+      }
+    }
+    for (final n in _realistic) {
+      n.visible = !painted;
+    }
+    for (final n in _painted) {
+      n.visible = painted;
+    }
+  }
+
+  Node _partNode(
+    String type,
+    ({
+      Geometry geometry,
+      Material material,
+      vm.Vector3 scale,
+      double lift,
+      double side,
+    })
+    part,
+    List<Detail> items,
+    Material material,
+  ) {
+    final mesh = InstancedMesh(geometry: part.geometry, material: material);
+    for (final d in items) {
+      final size = vm.Vector3(
+        d.size.x * part.scale.x,
+        d.size.y * part.scale.y,
+        d.size.z * part.scale.z,
+      );
+      final rot = vm.Quaternion.axisAngle(vm.Vector3(0, 1, 0), d.rotation);
+      mesh.addInstance(
+        vm.Matrix4.compose(
+          d.position +
+              vm.Vector3(0, d.size.y * part.lift, 0) +
+              rot.rotated(vm.Vector3(part.side, 0, 0)),
+          rot,
+          size,
+        ),
+      );
+    }
+    return Node(name: type)
+      ..castsShadows = castsShadows
+      ..addComponent(InstancedMeshComponent(mesh));
+  }
 
   /// Tiles whose centre is within this distance of the camera are drawn.
   double showWithin;

@@ -29,13 +29,36 @@ material {
     // windows with soft bands rather than drawing every pane.
     { type: float, name: detail, default: 0.35 },
     { type: float, name: band_softness, default: 0.06 },
+    // Colour of the object (details have no vertex colours).
+    { type: vec4, name: tint, default: [1.0, 1.0, 1.0, 1.0] },
+    // 1 = foliage: clumpy leaf masses in several greens - deep blue-green
+    // hollows, mid greens, sunlit yellow-green tops - like painted trees.
+    { type: float, name: foliage, default: 0.0 },
   ],
 }
 
 fragment {
+  float pt_hash(vec3 p) {
+    p = fract(p * 0.3183099 + 0.1);
+    p *= 17.0;
+    return fract(p.x * p.y * p.z * (p.x + p.y + p.z));
+  }
+
+  float pt_noise(vec3 x) {
+    vec3 i = floor(x);
+    vec3 f = fract(x);
+    f = f * f * (3.0 - 2.0 * f);
+    return mix(mix(mix(pt_hash(i), pt_hash(i + vec3(1, 0, 0)), f.x),
+                   mix(pt_hash(i + vec3(0, 1, 0)), pt_hash(i + vec3(1, 1, 0)), f.x), f.y),
+               mix(mix(pt_hash(i + vec3(0, 0, 1)), pt_hash(i + vec3(1, 0, 1)), f.x),
+                   mix(pt_hash(i + vec3(0, 1, 1)), pt_hash(i + vec3(1, 1, 1)), f.x), f.y),
+               f.z);
+  }
+
   void Surface(inout MaterialInputs material) {
     vec4 tex = texture(facade, GetUV0());
-    vec3 albedo = GetVertexColor().rgb * mix(vec3(1.0), tex.rgb, material_params.detail);
+    vec3 albedo = GetVertexColor().rgb * mix(vec3(1.0), tex.rgb, material_params.detail) *
+                  material_params.tint.rgb;
     // Painted colours: a touch more saturated than life.
     float grey = dot(albedo, vec3(0.299, 0.587, 0.114));
     albedo = max(mix(vec3(grey), albedo, material_params.saturation), 0.0);
@@ -58,6 +81,12 @@ fragment {
       }
 #endif
       lit = ndl * shadow;
+      if (material_params.foliage > 0.5) {
+        // Leaf clumps: break the light into blobs about a metre across,
+        // so a canopy reads as many painted leaf masses, not one ball.
+        float clump = pt_noise(pos * 0.9) * 0.65 + pt_noise(pos * 2.3) * 0.35;
+        lit = smoothstep(0.32, 0.62, dot(n, l) * 0.5 + 0.5 + (clump - 0.5) * 0.7) * shadow;
+      }
     }
 
     // Shadow side: albedo in a cool, coloured shade, lifted by the sky
@@ -72,6 +101,13 @@ fragment {
     // A narrow warm rim right at the light/shadow boundary, as painters do.
     float rim = lit * (1.0 - lit) * 4.0;
     vec3 colour = mix(shaded, sunlit, lit) + sun * albedo * rim * 0.06;
+    if (material_params.foliage > 0.5) {
+      // Deep blue-green in the hollows, yellow-green where the sun lands.
+      vec3 hollow = albedo * vec3(0.38, 0.55, 0.72) * ambient * 0.8;
+      vec3 bright = albedo * vec3(1.25, 1.18, 0.62) * (ambient * 0.45 + sun * material_params.light_scale);
+      float depth = smoothstep(-0.6, 0.6, n.y);
+      colour = mix(hollow, bright, lit) * mix(0.75, 1.0, depth);
+    }
 
     // Night windows still glow.
     colour += texture(lights, GetUV0()).rgb * material_params.lights_strength;
