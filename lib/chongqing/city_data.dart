@@ -82,6 +82,79 @@ class CityData {
 
   vm.Vector2 get center => bounds.center;
 
+  /// Loads several districts and merges them into one city. Districts are
+  /// built around the same origin (tool/chongqing/districts.dart), so their
+  /// geometry already lines up. Layers are keyed "district/layer".
+  static Future<CityData> loadAll(String title, List<String> districts) async {
+    final parts = await Future.wait(districts.map(load));
+    if (parts.length == 1) return parts.first;
+    final bounds = vm.Aabb2.copy(parts.first.bounds);
+    for (final p in parts.skip(1)) {
+      bounds.hull(p.bounds);
+    }
+    return CityData._(
+      [for (final p in parts) ...p.traffic],
+      [for (final p in parts) ...p.boatLanes],
+      [for (final p in parts) ...p.details],
+      title,
+      parts.first.attribution,
+      bounds,
+      parts.first.riverLevel,
+      {
+        for (var i = 0; i < parts.length; i++)
+          for (final e in parts[i].layers.entries)
+            '${districts[i]}/${e.key}': e.value,
+      },
+      [for (final p in parts) ...p.landmarks],
+      [for (final p in parts) ...p.rides],
+    );
+  }
+
+  /// Rebuilds a terrain grid (heights + colours only in the file) into a
+  /// mesh, with the same two-triangles-per-cell pattern the build tool
+  /// drapes roads and buildings on.
+  static MeshGeometry _gridMesh(
+    Map<String, dynamic> grid,
+    Uint8List bytes,
+    int heightsOffset,
+    Float32List colors,
+  ) {
+    final cols = grid['cols'] as int, rows = grid['rows'] as int;
+    final minX = (grid['minX'] as num).toDouble(),
+        minZ = (grid['minZ'] as num).toDouble();
+    final sx = (grid['stepX'] as num).toDouble(),
+        sz = (grid['stepZ'] as num).toDouble();
+    final h = bytes.buffer.asFloat32List(heightsOffset, cols * rows);
+    final positions = Float32List(cols * rows * 3);
+    for (var j = 0; j < rows; j++) {
+      for (var i = 0; i < cols; i++) {
+        final v = j * cols + i;
+        positions[v * 3] = minX + i * sx;
+        positions[v * 3 + 1] = h[v];
+        positions[v * 3 + 2] = minZ + j * sz;
+      }
+    }
+    final indices = Uint32List((cols - 1) * (rows - 1) * 6);
+    var k = 0;
+    for (var j = 0; j < rows - 1; j++) {
+      for (var i = 0; i < cols - 1; i++) {
+        final a = j * cols + i, b = a + 1, c = a + cols, d = c + 1;
+        // Same winding the build tool emits for upward-facing triangles.
+        indices[k++] = a;
+        indices[k++] = b;
+        indices[k++] = d;
+        indices[k++] = a;
+        indices[k++] = d;
+        indices[k++] = c;
+      }
+    }
+    return MeshGeometry.fromArrays(
+      positions: positions,
+      colors: colors,
+      indices: indices,
+    );
+  }
+
   static Future<CityData> load(String district) async {
     final meta = jsonDecode(
       await rootBundle.loadString('assets/chongqing/$district.json'),
@@ -101,16 +174,27 @@ class CityData {
         // Stored as sRGB bytes; the shader wants linear.
         colors[i] = i % 4 == 3 ? 1.0 : pow(srgb[i] / 255, 2.2).toDouble();
       }
+      final grid = l['grid'] as Map<String, dynamic>?;
+      if (grid != null) {
+        layers[l['name'] as String] = _gridMesh(
+          grid,
+          bytes,
+          l['heights'] as int,
+          colors,
+        );
+        continue;
+      }
+      final indexOffset = l['indices'] as int;
+      final indexCount = l['indexCount'] as int;
       layers[l['name'] as String] = MeshGeometry.fromArrays(
         positions: bytes.buffer.asFloat32List(l['positions'] as int, n * 3),
         texCoords: l['uvs'] == null
             ? null
             : bytes.buffer.asFloat32List(l['uvs'] as int, n * 2),
         colors: colors,
-        indices: bytes.buffer.asUint32List(
-          l['indices'] as int,
-          l['indexCount'] as int,
-        ),
+        indices: (l['indexBits'] ?? 32) == 16
+            ? bytes.buffer.asUint16List(indexOffset, indexCount)
+            : bytes.buffer.asUint32List(indexOffset, indexCount),
       );
     }
 

@@ -14,6 +14,7 @@ class DetailChunks {
     List<Detail> details, {
     this.tileSize = 200,
     this.showWithin = 650,
+    this.castsShadows = true,
   }) {
     final tiles = <(int, int), Map<String, List<Detail>>>{};
     for (final d in details) {
@@ -51,7 +52,9 @@ class DetailChunks {
             );
           }
           tile.add(
-            Node(name: type)..addComponent(InstancedMeshComponent(mesh)),
+            Node(name: type)
+              ..castsShadows = castsShadows
+              ..addComponent(InstancedMeshComponent(mesh)),
           );
         }
         for (final d in items) {
@@ -76,6 +79,21 @@ class DetailChunks {
 
   /// Tiles whose centre is within this distance of the camera are drawn.
   double showWithin;
+
+  /// Whether these items cast shadows. Each shadow cascade re-draws every
+  /// casting tile, so small clutter skips it.
+  bool castsShadows;
+
+  /// Turns shadow casting on or off for every tile.
+  void setCastsShadows(bool value) {
+    if (value == castsShadows) return;
+    castsShadows = value;
+    for (final (tile, _) in _tiles) {
+      for (final child in tile.children) {
+        child.castsShadows = value;
+      }
+    }
+  }
 
   final Node root = Node(name: 'details');
   final List<(Node, vm.Vector3)> _tiles = [];
@@ -188,6 +206,16 @@ class DetailChunks {
       trunkTop: 0.2,
     ),
     'shrub': [_part(_blob, _mat(0.2, 0.38, 0.13, rough: 0.9))],
-    'bougainvillea': [_part(_blob, _mat(0.82, 0.12, 0.45, rough: 0.8))],
+    // Bougainvillea spills over railings in low, flat clumps of deep pink,
+    // not big balls.
+    'bougainvillea': [
+      _part(
+        _blob,
+        _mat(0.62, 0.14, 0.34, rough: 0.85),
+        sx: 0.8,
+        sy: 0.55,
+        sz: 0.8,
+      ),
+    ],
   };
 }

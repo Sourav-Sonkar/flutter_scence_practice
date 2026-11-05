@@ -81,6 +81,29 @@ enum HeightSource { tag, levels, landmark, estimate }
   final known = landmarkHeight(tags);
   if (known != null) return (known, HeightSource.landmark);
   final type = '${tags['building']}';
+  // Big, low public buildings: a wide footprint here does not mean a tower.
+  final low = switch (type) {
+    'stadium' || 'grandstand' => 32.0,
+    'museum' ||
+    'civic' ||
+    'public' ||
+    'government' ||
+    'church' ||
+    'temple' => 24.0,
+    'school' || 'college' || 'train_station' || 'transportation' => 18.0,
+    'warehouse' || 'industrial' || 'sports_hall' => 14.0,
+    _ => null,
+  };
+  if (low != null) return (low * (0.85 + hash * 0.3), HeightSource.estimate);
+  // Historic sites are old low buildings, whatever their footprint.
+  if (tags.containsKey('historic') || tags.containsKey('heritage')) {
+    return (10 + hash * 6, HeightSource.estimate);
+  }
+  if (tags['tourism'] == 'museum' ||
+      tags['leisure'] == 'stadium' ||
+      tags['leisure'] == 'sports_hall') {
+    return (24 * (0.85 + hash * 0.3), HeightSource.estimate);
+  }
   const small = {
     'house',
     'detached',
@@ -102,7 +125,10 @@ enum HeightSource { tag, levels, landmark, estimate }
   if (area < 120) return (8 + hash * 7, HeightSource.estimate);
   if (area < 400) return (15 + hash * 30, HeightSource.estimate);
   if (area < 1500) return (40 + hash * 70, HeightSource.estimate);
-  return (50 + hash * 90, HeightSource.estimate);
+  // Very large footprints are usually malls or podiums, with any towers on
+  // them mapped as separate buildings.
+  if (area < 4000) return (30 + hash * 60, HeightSource.estimate);
+  return (20 + hash * 25, HeightSource.estimate);
 }
 
 double? _metres(Object? v) {
@@ -168,6 +194,16 @@ class CityBuilder {
 
   void _count(String k) => stats[k] = (stats[k] ?? 0) + 1;
 
+  static bool _isArea(Map<String, dynamic> e, Map<String, dynamic> tags) {
+    if (tags['area'] == 'yes' || tags['place'] == 'square') return true;
+    final g = e['geometry'] as List? ?? const [];
+    final closed =
+        g.length > 3 &&
+        g.first['lat'] == g.last['lat'] &&
+        g.first['lon'] == g.last['lon'];
+    return closed && tags['highway'] == 'pedestrian';
+  }
+
   bool _inside(double x, double z) =>
       x >= terrain.minX &&
       x <= terrain.maxX &&
@@ -187,7 +223,16 @@ class CityBuilder {
       }
     }
     if (cur != null && cur.length > 1) runs.add(cur);
-    return runs;
+    // Reach one sample past each end so roads meet across district borders
+    // instead of leaving a small gap.
+    return [
+      for (final r in runs)
+        [
+          if (r.first > 0) r.first - 1,
+          ...r,
+          if (r.last < pts.length - 1) r.last + 1,
+        ],
+    ];
   }
 
   final List<List<P2>> _buildingRings = [];
@@ -204,11 +249,13 @@ class CityBuilder {
 
   CityBuild build(List<Map<String, dynamic>> elements) {
     final covers = <(Cover, List<P2>)>[];
+    final featured = <Map<String, Object>>[];
     final rivers = <List<P2>>[];
     final homes = MeshLayer('buildings', hasUv: true);
     final towers = MeshLayer('towers', hasUv: true);
     final roads = MeshLayer('roads');
     final structures = MeshLayer('structures'); // bridges, piers, rail, cable
+    _structures = structures;
     final landmarks = <Map<String, Object>>[];
     final monorail = <List<V3>>[];
     final rides = <Ride>[];
@@ -219,7 +266,57 @@ class CityBuilder {
       if (tags.containsKey('building')) {
         for (final ring in _rings(e)) {
           final lm = _building(homes, towers, ring, tags, id);
-          if (lm != null) landmarks.add(lm);
+          if (lm == null) continue;
+          (_isGreatHall(tags) ? featured : landmarks).add(lm);
+        }
+      } else if (tags.containsKey('highway') &&
+          e['type'] == 'way' &&
+          _isArea(e, tags)) {
+        // Plazas such as People's Square: paved ground, not a road ribbon.
+        final ring = _ringFromGeom(e['geometry']);
+        if (ring.length >= 3) covers.add((Cover.paved, ring));
+        _count('plaza areas');
+        final name = tags['name:en'] ?? tags['name'];
+        if (name != null && tags['place'] == 'square' && ring.length >= 3) {
+          var cx = 0.0, cz = 0.0;
+          for (final (x, z) in ring) {
+            cx += x;
+            cz += z;
+          }
+          cx /= ring.length;
+          cz /= ring.length;
+          if (_inside(cx, cz)) {
+            final g = terrain.heightAt(cx, cz);
+            featured.add({
+              'name': '$name',
+              'x': cx,
+              'y': g + 30,
+              'z': cz,
+              'ground': g,
+              'height': 30,
+            });
+          }
+        }
+      } else if (e['type'] == 'node' && tags.containsKey('railway')) {
+        // Stations become featured places: Liziba, where Line 2 runs
+        // through a residential building, is the famous one.
+        final (x, z) = proj.toLocal(
+          (e['lat'] as num).toDouble(),
+          (e['lon'] as num).toDouble(),
+        );
+        final name = tags['name:en'] ?? tags['name'];
+        if (name != null &&
+            _inside(x, z) &&
+            '$name'.contains(RegExp('Liziba|李子坝'))) {
+          final g = max(terrain.heightAt(x, z), riverLevel);
+          featured.add({
+            'name': '$name Station',
+            'x': x,
+            'y': g + 40,
+            'z': z,
+            'ground': g,
+            'height': 40,
+          });
         }
       } else if (tags.containsKey('highway') && e['type'] == 'way') {
         _road(roads, structures, _line(e), tags);
@@ -245,9 +342,15 @@ class CityBuilder {
         }
       }
     }
-    landmarks.sort(
-      (a, b) => (b['height'] as num).compareTo(a['height'] as num),
-    );
+    // Chips: famous places first, then the tallest towers with real names
+    // (skip block labels such as "T3A幢", "5栋", "A座").
+    final blockLabel = RegExp(r'^[A-Za-z0-9\-]+\s*[幢栋座号楼]$|^[①-⑳]');
+    landmarks
+      ..removeWhere(
+        (l) => blockLabel.hasMatch(l['name'] as String) || l['en'] != true,
+      )
+      ..sort((a, b) => (b['height'] as num).compareTo(a['height'] as num));
+    landmarks.insertAll(0, featured);
     final runs = _chain(monorail);
     if (runs.isNotEmpty) {
       rides.insert(0, (
@@ -288,7 +391,7 @@ class CityBuilder {
       for (var i = 0; i < terrain.cols; i++) {
         final h = terrain.vertex(i, j);
         final x = terrain.minX + i * terrain.spacing;
-        final z = terrain.minZ + j * terrain.spacing;
+        final z = terrain.minZ + j * terrain.spacingZ;
         var color = _groundColor(h);
         if (h - riverLevel >= 8) {
           // Green on steep unbuilt slopes, the way Chongqing's cliffs look.
@@ -586,6 +689,48 @@ class CityBuilder {
   ];
 
   final List<Detail> _details = [];
+  late MeshLayer _structures;
+
+  static bool _isGreatHall(Map<String, dynamic> tags) {
+    final n = '${tags['name'] ?? ''} ${tags['name:en'] ?? ''}';
+    return n.contains('人民大礼堂') || n.contains("People's Grand Hall");
+  }
+
+  /// Chongqing People's Grand Hall, generated in code: a white stone base,
+  /// cream wings with teal glazed roofs, and the central red rotunda under
+  /// three tiers of teal roof with a gold finial (about 65 m), modelled on
+  /// the hall's well-known shape. Returns the top height.
+  double _greatHall(List<P2> ring, double base) {
+    const stone = (226, 222, 212), cream = (236, 228, 208);
+    const red = (178, 52, 40), teal = (46, 116, 106), gold = (232, 188, 80);
+    final out = _structures;
+    final tris = triangulate(ring);
+    out.prism(ring, base, base + 4, stone, stone, tris);
+    out.prism(ring, base + 4, base + 16, cream, teal, tris);
+    // The rotunda sits on the main block; its centre is the centroid of the
+    // footprint's largest-area triangle fan, close enough to the hall's
+    // centre on this outline.
+    var cx = 0.0, cz = 0.0, total = 0.0;
+    for (var t = 0; t < tris.length; t += 3) {
+      final a = ring[tris[t]], b = ring[tris[t + 1]], c = ring[tris[t + 2]];
+      final area = signedArea2([a, b, c]).abs() / 2;
+      cx += (a.$1 + b.$1 + c.$1) / 3 * area;
+      cz += (a.$2 + b.$2 + c.$2) / 3 * area;
+      total += area;
+    }
+    cx /= total;
+    cz /= total;
+    final y = base + 16;
+    out.frustum(cx, cz, y, y + 12, 22, 22, red);
+    out.frustum(cx, cz, y + 12, y + 18, 29, 19, teal);
+    out.frustum(cx, cz, y + 18, y + 24, 18, 18, red);
+    out.frustum(cx, cz, y + 24, y + 29, 23, 14, teal);
+    out.frustum(cx, cz, y + 29, y + 33, 13, 13, red);
+    out.frustum(cx, cz, y + 33, y + 43, 17, 1.5, teal);
+    out.frustum(cx, cz, y + 43, y + 49, 1.4, 0.2, gold, segments: 12);
+    _count('landmark models (Great Hall)');
+    return y + 49;
+  }
 
   Map<String, Object>? _building(
     MeshLayer homes,
@@ -618,6 +763,18 @@ class CityBuilder {
     base = max(base, riverLevel) - 0.5;
     final top = base + 0.5 + height;
 
+    if (_isGreatHall(tags)) {
+      final top = _greatHall(ring, base);
+      _buildingRings.add(ring);
+      return {
+        'name': '${tags['name:en'] ?? tags['name']}',
+        'x': cx,
+        'y': top,
+        'z': cz,
+        'ground': base + 0.5,
+        'height': (top - base).round(),
+      };
+    }
     final glass = _isGlass(tags, height);
     final out = glass ? towers : homes;
     final (wall, roof) = _buildingColors(glass, hash);
@@ -685,6 +842,7 @@ class CityBuilder {
       'z': cz,
       'ground': base + 0.5,
       'height': height.round(),
+      'en': tags['name:en'] != null,
     };
   }
 

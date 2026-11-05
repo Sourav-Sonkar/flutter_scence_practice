@@ -1,4 +1,4 @@
-import 'dart:math' show sqrt;
+import 'dart:math' show sqrt, sin, cos, pi, max;
 import 'dart:typed_data';
 
 /// Accumulates one renderable layer: positions, sRGB vertex colours and
@@ -183,6 +183,38 @@ class MeshLayer {
       final c = vertex(x1, y1, z1, rgb, u1, -v1);
       final d = vertex(x0, y1, z0, rgb, u0, -v1);
       quad(a, b, c, d, outward);
+    }
+  }
+
+  /// A truncated cone (or cylinder) around (cx, cz) from y0 (radius r0) to
+  /// y1 (radius r1), with a flat top cap when r1 > 0.
+  void frustum(
+    double cx,
+    double cz,
+    double y0,
+    double y1,
+    double r0,
+    double r1,
+    (int, int, int) rgb, {
+    int segments = 32,
+  }) {
+    final ring0 = <int>[], ring1 = <int>[];
+    for (var k = 0; k < segments; k++) {
+      final a = k / segments * 2 * pi;
+      ring0.add(vertex(cx + cos(a) * r0, y0, cz + sin(a) * r0, rgb));
+      ring1.add(vertex(cx + cos(a) * r1, y1, cz + sin(a) * r1, rgb));
+    }
+    final slope = (r0 - r1) / max(1e-6, y1 - y0);
+    for (var k = 0; k < segments; k++) {
+      final n = (k + 1) % segments;
+      final a = (k + 0.5) / segments * 2 * pi;
+      quad(ring0[k], ring0[n], ring1[n], ring1[k], (cos(a), slope, sin(a)));
+    }
+    if (r1 > 0.01) {
+      final centre = vertex(cx, y1, cz, rgb);
+      for (var k = 0; k < segments; k++) {
+        triangle(ring1[k], ring1[(k + 1) % segments], centre, (0, 1, 0));
+      }
     }
   }
 

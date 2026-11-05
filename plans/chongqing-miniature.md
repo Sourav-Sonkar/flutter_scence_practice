@@ -211,3 +211,30 @@ domain, compiled by the build hook):
   directly inside `assets/`. A *new* `.fmat` in a subfolder needs
   `rm -rf .dart_tool/hooks_runner/flutter_scene_practice` once; edits to an existing one
   rebuild normally.
+
+## District 2: Jialing riverside (2026-11-05)
+
+Box lat 29.550–29.570, lon 106.525–106.570; its east edge is exactly the Yuzhong tip's
+west edge. Loaded side by side with district 1 (`CityData.loadAll`).
+
+- **Shared frame**: every district is projected around one city origin (29.56, 106.58),
+  uses one river level (160.7 m), and its terrain grid ends exactly on its edges (step
+  adjusted per axis), so districts meet with no seams or water steps. Roads reach one
+  sample past the border so they join.
+- **Famous places**: People's Square (paved plaza), the Chongqing People's Grand Hall
+  (generated model: stone base, cream wings, red rotunda, three teal roof tiers, gold
+  finial, about 65 m), and Liziba Station. They lead the landmark chips; other chips are
+  English-named towers only.
+- **Line 2 monorail ride**: 4.3 km of elevated track with two four-car trains running in
+  opposite directions. A picker in ride mode switches between Line 2 and the cableway.
+  Tilt-shift blur is off while riding.
+- **Heights**: low, wide public buildings (stadium, museum, civic, school, historic) get
+  their own ranges; very large footprints are treated as podiums, not towers.
+- **Size**: terrain stored as heights + colours only (grid rebuilt in the app) and 16-bit
+  indices where possible. Yuzhong tip 4.4 to 2.4 MB, Jialing riverside 12.9 to 7.9 MB.
+- **Speed (Chrome, Medium)**: about 32 to 37 FPS by day and while the day plays. Bigger
+  detail tiles, no rooftop or (on Medium) tree shadows, ground and roads not casting,
+  static shadow caching for the city, the sun turning in 1° steps, and reflections only
+  from dusk. **Open: night views toward the horizon run at about 27 FPS** (both districts'
+  full geometry plus glow). Next options: load or draw only districts near the camera,
+  or a cheaper far-distance terrain.

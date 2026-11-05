@@ -27,23 +27,28 @@ class GridTerrain {
     required this.minX,
     required this.minZ,
     required this.spacing,
+    double? spacingZ,
     required this.cols,
     required this.rows,
     required this.heights,
-  });
+  }) : spacingZ = spacingZ ?? spacing;
 
+  /// Grid step along x; [spacingZ] along z (defaults to the same). They can
+  /// differ slightly so a district's grid ends exactly on its edges and
+  /// neighbouring districts share their border vertices.
   final double minX, minZ, spacing;
+  final double spacingZ;
   final int cols, rows; // vertex counts
   final Float64List heights; // rows * cols, row-major (z then x)
 
   double get maxX => minX + (cols - 1) * spacing;
-  double get maxZ => minZ + (rows - 1) * spacing;
+  double get maxZ => minZ + (rows - 1) * spacingZ;
 
   double vertex(int i, int j) => heights[j * cols + i];
 
   double heightAt(double x, double z) {
     final fx = ((x - minX) / spacing).clamp(0.0, cols - 1.000001);
-    final fz = ((z - minZ) / spacing).clamp(0.0, rows - 1.000001);
+    final fz = ((z - minZ) / spacingZ).clamp(0.0, rows - 1.000001);
     final i = fx.floor(), j = fz.floor();
     final u = fx - i, v = fz - j;
     final h00 = vertex(i, j), h10 = vertex(i + 1, j);

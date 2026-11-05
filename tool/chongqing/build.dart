@@ -18,8 +18,6 @@ import 'src/city_builder.dart';
 import 'src/geo.dart';
 import 'src/mesh_layer.dart';
 
-const gridSpacing = 8.0;
-
 void main(List<String> args) {
   final name = args.isEmpty ? 'yuzhong_tip' : args.first;
   final d = districtOrExit(args);
@@ -30,37 +28,35 @@ void main(List<String> args) {
     return;
   }
 
-  final proj = LocalProjection(d.centerLat, d.centerLon);
+  final proj = LocalProjection(cityOriginLat, cityOriginLon);
   final (x0, z0) = proj.toLocal(d.north, d.west);
   final (x1, z1) = proj.toLocal(d.south, d.east);
 
   // ---- terrain grid ----
   final sampler = _TerrariumMosaic(cache, d);
-  final cols = ((x1 - x0) / gridSpacing).floor() + 1;
-  final rows = ((z1 - z0) / gridSpacing).floor() + 1;
+  // Whole cells that end exactly on the district's edges, so a neighbour's
+  // border vertices sit at the same places (and sample the same heights).
+  final cols = ((x1 - x0) / terrainStep).round() + 1;
+  final rows = ((z1 - z0) / terrainStep).round() + 1;
+  final stepX = (x1 - x0) / (cols - 1), stepZ = (z1 - z0) / (rows - 1);
   final heights = Float64List(cols * rows);
   for (var j = 0; j < rows; j++) {
     for (var i = 0; i < cols; i++) {
-      final (lat, lon) = proj.toLatLon(
-        x0 + i * gridSpacing,
-        z0 + j * gridSpacing,
-      );
+      final (lat, lon) = proj.toLatLon(x0 + i * stepX, z0 + j * stepZ);
       heights[j * cols + i] = sampler.elevation(lat, lon);
     }
   }
-  // River surface. The elevation data is noisy over water (about 154 to
-  // 165 m here) and has voids that read as -3000 m, so take the level just
-  // below the 25th percentile of plausible ground: it covers the river noise
-  // while staying under Chongqing's riverside roads (~185 m).
+  // One river level for the whole city (see districts.dart).
   final valid = heights.where((h) => h > 100).toList()..sort();
-  final riverLevel = valid[(valid.length * 0.25).floor()] - 1;
+  const riverLevel = cityRiverLevel;
   for (var k = 0; k < heights.length; k++) {
     if (heights[k] < riverLevel) heights[k] = riverLevel - 4;
   }
   final terrain = GridTerrain(
     minX: x0,
     minZ: z0,
-    spacing: gridSpacing,
+    spacing: stepX,
+    spacingZ: stepZ,
     cols: cols,
     rows: rows,
     heights: heights,
@@ -83,6 +79,34 @@ void main(List<String> args) {
 
   for (final MeshLayer l in city.layers) {
     pad();
+    if (l.name == 'terrain') {
+      // The terrain is a regular grid: store only heights and colours. The
+      // app rebuilds positions and the (fixed) triangle pattern on load,
+      // which is about a fifth of the size of a general mesh.
+      final h = bytes.length;
+      bytes.add(
+        Float32List.fromList([
+          for (var v = 0; v < l.vertexCount; v++) l.positions[v * 3 + 1],
+        ]).buffer.asUint8List(),
+      );
+      final col = bytes.length;
+      bytes.add(l.colorsU8());
+      layers.add({
+        'name': l.name,
+        'grid': {
+          'cols': cols,
+          'rows': rows,
+          'minX': x0,
+          'minZ': z0,
+          'stepX': stepX,
+          'stepZ': stepZ,
+        },
+        'vertexCount': l.vertexCount,
+        'heights': h,
+        'colors': col,
+      });
+      continue;
+    }
     final pos = bytes.length;
     bytes.add(l.positionsF32().buffer.asUint8List());
     final col = bytes.length;
@@ -91,11 +115,18 @@ void main(List<String> args) {
     final uv = bytes.length;
     if (l.hasUv) bytes.add(l.uvsF32().buffer.asUint8List());
     final idx = bytes.length;
-    bytes.add(l.indicesU32().buffer.asUint8List());
+    // 16-bit indices when they fit: half the index data for most layers.
+    final small = l.vertexCount <= 65535;
+    bytes.add(
+      small
+          ? Uint16List.fromList(l.indices).buffer.asUint8List()
+          : l.indicesU32().buffer.asUint8List(),
+    );
     layers.add({
       'name': l.name,
       'vertexCount': l.vertexCount,
       'indexCount': l.indices.length,
+      'indexBits': small ? 16 : 32,
       'positions': pos,
       'colors': col,
       if (l.hasUv) 'uvs': uv,
@@ -125,7 +156,7 @@ void main(List<String> args) {
     'district': name,
     'title': d.title,
     'attribution': '© OpenStreetMap contributors (ODbL); elevation: Mapzen Terrarium / AWS Open Data',
-    'origin': {'lat': d.centerLat, 'lon': d.centerLon},
+    'origin': {'lat': cityOriginLat, 'lon': cityOriginLon},
     'bounds': {'minX': x0, 'maxX': x1, 'minZ': z0, 'maxZ': z1},
     'riverLevel': riverLevel,
     'groundRange': [valid.first, valid.last],
@@ -171,7 +202,7 @@ void main(List<String> args) {
   for (final l in layers) {
     stdout.writeln(
       '  ${l['name']}: ${l['vertexCount']} vertices, '
-      '${(l['indexCount'] as int) ~/ 3} triangles',
+      '${l['indexCount'] == null ? 'grid' : '${(l['indexCount'] as int) ~/ 3} triangles'}',
     );
   }
   city.stats.forEach((k, v) => stdout.writeln('  $k: $v'));

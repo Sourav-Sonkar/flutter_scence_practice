@@ -13,6 +13,7 @@ import 'crowns.dart';
 import 'detail_chunks.dart';
 import 'facade_textures.dart';
 import 'movers.dart';
+import 'ride_vehicles.dart';
 import 'sky.dart';
 import 'street_lamps.dart';
 
@@ -21,9 +22,13 @@ enum _Mode { diorama, ride }
 /// A miniature district of Chongqing built from OpenStreetMap data.
 /// Diorama mode orbits the city; ride mode follows a cableway or monorail.
 class CityView extends StatefulWidget {
-  const CityView({super.key, this.district = 'yuzhong_tip'});
+  const CityView({
+    super.key,
+    this.districts = const ['jialing_riverside', 'yuzhong_tip'],
+  });
 
-  final String district;
+  /// Districts built by tool/chongqing, loaded side by side.
+  final List<String> districts;
 
   @override
   State<CityView> createState() => _CityViewState();
@@ -44,7 +49,9 @@ class _CityViewState extends State<CityView> {
   late final CameraComponent _rideCamera;
   double _rideYaw = 0, _ridePitch = -0.15;
 
-  final List<Node> _cabins = [];
+  final List<RideVehicles> _rides = [];
+  int _rideIndex = 0;
+  RideVehicles? get _ride => _rides.isEmpty ? null : _rides[_rideIndex];
   late final DetailChunks _rooftops;
   late final DetailChunks _vegetation;
   late final CityLook _look;
@@ -63,9 +70,6 @@ class _CityViewState extends State<CityView> {
   Weather _weather = Weather.clear;
   final ValueNotifier<double> _clock = ValueNotifier(0);
   late final Movers _movers;
-  RidePath? _ride;
-  double _rideS = 0;
-  double _rideDir = 1;
 
   _Mode _mode = _Mode.diorama;
   // Decided from the platform and screen size on first layout: laptops and
@@ -79,8 +83,6 @@ class _CityViewState extends State<CityView> {
       ValueNotifier((fps: 0, ui: 0, gpu: 0));
   int _frames = 0;
   double _frameTime = 0, _uiMs = 0, _gpuMs = 0;
-
-  static const double _rideSpeed = 6; // m/s, roughly a real cable car
 
   @override
   void initState() {
@@ -115,7 +117,10 @@ class _CityViewState extends State<CityView> {
   Future<void> _load() async {
     try {
       await Scene.initializeStaticResources();
-      final city = await CityData.load(widget.district);
+      final city = await CityData.loadAll(
+        'Chongqing · Yuzhong',
+        widget.districts,
+      );
       _clouds = await CloudTextures.load();
       try {
         _shaderSky = await loadFmatSky('assets/chongqing/sky.fmat');
@@ -157,9 +162,16 @@ class _CityViewState extends State<CityView> {
       'structures': _pbr(0.6),
     };
     city.layers.forEach((name, geometry) {
+      final kind = name.split('/').last; // keys are "district/layer"
       _scene.add(
-        Node(name: name, mesh: Mesh(geometry, materials[name] ?? _pbr(0.8)))
-          ..frustumCulled = false,
+        Node(name: name, mesh: Mesh(geometry, materials[kind] ?? _pbr(0.8)))
+          ..frustumCulled = false
+          // Ground and roads are flat or gentle: casting shadows from them
+          // barely shows but costs a full re-draw per shadow cascade.
+          ..castsShadows = kind != 'terrain' && kind != 'roads'
+          // The city never moves, so its shadow maps can be cached and only
+          // redrawn when the sun does.
+          ..shadowStatic = true,
       );
     });
 
@@ -176,13 +188,16 @@ class _CityViewState extends State<CityView> {
     };
     _vegetation = DetailChunks(
       city.details.where((d) => plants.contains(d.type)).toList(),
-      tileSize: 300,
+      // Big tiles keep the draw count low across two districts.
+      tileSize: 600,
       showWithin: 2400,
     );
     _rooftops = DetailChunks(
       city.details
           .where((d) => !plants.contains(d.type) && d.type != 'crown')
           .toList(),
+      tileSize: 400,
+      castsShadows: false, // too small to matter, costly per cascade
     );
     _crowns = LedCrowns(city.details.where((d) => d.type == 'crown').toList());
     _scene.add(_crowns.root);
@@ -229,14 +244,15 @@ class _CityViewState extends State<CityView> {
       projection: PerspectiveProjection(near: 2, far: 9000),
     );
     _orbit = OrbitCameraController(
-      target: vm.Vector3(city.center.x, city.riverLevel + 40, city.center.y),
+      // Start over the peninsula tip (the city origin), where the rivers meet.
+      target: vm.Vector3(0, city.riverLevel + 40, 0),
       distance: 1150,
       // From the south-east, looking up the peninsula from the confluence.
       // A high angle is what makes tilt-shift photos read as models.
       azimuth: -2.4,
       polar: 0.72,
       minDistance: 120,
-      maxDistance: 3200,
+      maxDistance: 5000,
       minPolar: 0.12,
       maxPolar: 1.45,
       smoothing: 0.2,
@@ -256,18 +272,11 @@ class _CityViewState extends State<CityView> {
     _rideNode.addComponent(_rideCamera);
     _scene.add(_rideNode);
 
-    // Cabins (or train cars) that run along the first ride path.
-    if (city.rides.isNotEmpty) {
-      _ride = city.rides.first;
-      final cabin = Mesh(
-        CuboidGeometry(vm.Vector3(3.2, 2.8, 4.2)),
-        _pbr(0.4, vm.Vector4(0.75, 0.08, 0.06, 1)),
-      );
-      for (var i = 0; i < 2; i++) {
-        final n = Node(name: 'cabin $i', mesh: cabin);
-        _cabins.add(n);
-        _scene.add(n);
-      }
+    // Vehicles for every ride: cable car cabins, Line 2 trains.
+    final ridesNode = Node(name: 'rides');
+    _scene.add(ridesNode);
+    for (final ride in city.rides) {
+      _rides.add(RideVehicles(ride, ridesNode));
     }
     if (_shaderSky != null) {
       _look
@@ -281,7 +290,10 @@ class _CityViewState extends State<CityView> {
     _look.configure(weather: _weather, quality: _q);
     _updateSky();
     // Low keeps trees to a shorter range to save phones some work.
-    _vegetation.showWithin = _q == Quality.low ? 1300 : 2400;
+    _vegetation
+      ..showWithin = _q == Quality.low ? 1300 : 2400
+      // Tree shadows look great but every cascade re-draws every tree.
+      ..setCastsShadows(_q == Quality.high);
   }
 
   void _updateSky() {
@@ -317,7 +329,9 @@ class _CityViewState extends State<CityView> {
       ..setVec3('cloud_shade', s.cloudShade)
       ..setFloat('detail', _q == Quality.low ? 3 : 5);
     // Re-bake the sky lighting only when the sky has visibly changed.
-    final key = (_hour.value * 6).round() * 10 + _weather.index;
+    // Every half in-game hour (5 s of real time while playing) is plenty:
+    // ambient light changes slowly, and each bake costs GPU time.
+    final key = (_hour.value * 2).round() * 10 + _weather.index;
     if (key != _bakedSkyKey) {
       _bakedSkyKey = key;
       _look.skyLighting?.invalidate();
@@ -372,11 +386,10 @@ class _CityViewState extends State<CityView> {
           ? _orbitNode.globalTransform.getTranslation()
           : _rideNode.globalTransform.getTranslation(),
     );
-    if (_mode == _Mode.diorama) {
-      _scene.depthOfField.focusDistance = _orbit.distance;
-    } else {
-      _scene.depthOfField.focusDistance = 400;
-    }
+    // Tilt-shift is a diorama effect; riding, it would only smear the view.
+    final dof = _mode == _Mode.diorama && _look.depthOfField;
+    if (_scene.depthOfField.enabled != dof) _scene.depthOfField.enabled = dof;
+    if (dof) _scene.depthOfField.focusDistance = _orbit.distance;
 
     if (_frameTime >= 0.25) {
       _stats.value = (
@@ -390,36 +403,12 @@ class _CityViewState extends State<CityView> {
   }
 
   void _advanceRide(double dt) {
+    for (final r in _rides) {
+      r.update(dt);
+    }
     final ride = _ride;
-    if (ride == null) return;
-    _rideS += _rideDir * _rideSpeed * dt;
-    if (_rideS >= ride.length || _rideS <= 0) {
-      _rideS = _rideS.clamp(0.0, ride.length);
-      _rideDir = -_rideDir;
-    }
-    // Two cabins pass each other, like the real cableway.
-    for (var i = 0; i < _cabins.length; i++) {
-      final s = i == 0 ? _rideS : ride.length - _rideS;
-      final (p, fwd) = ride.sample(s);
-      final dir = i == 0 ? fwd * _rideDir : fwd * -_rideDir;
-      _cabins[i].globalTransform = vm.Matrix4.compose(
-        p,
-        vm.Quaternion.axisAngle(vm.Vector3(0, 1, 0), atan2(dir.x, dir.z)),
-        vm.Vector3.all(1),
-      );
-    }
-    if (_mode == _Mode.ride) {
-      final (p, fwd) = ride.sample(_rideS);
-      final heading = atan2(fwd.x * _rideDir, fwd.z * _rideDir) + _rideYaw;
-      final eye =
-          p +
-          vm.Vector3(0, 0.6, 0) +
-          vm.Vector3(sin(heading), 0, cos(heading)) * 1.4;
-      final look = vm.Vector3(
-        sin(heading) * cos(_ridePitch),
-        sin(_ridePitch),
-        cos(heading) * cos(_ridePitch),
-      );
+    if (ride != null && _mode == _Mode.ride) {
+      final (eye, look) = ride.riderView(_rideYaw, _ridePitch);
       _rideNode.lookAtFrom(eye, eye + look);
     }
   }
@@ -556,13 +545,40 @@ class _CityViewState extends State<CityView> {
               ButtonSegment(
                 value: _Mode.ride,
                 icon: const Icon(Icons.airline_seat_recline_normal),
-                label: Text(ride == null ? 'Ride' : 'Ride ${ride.kind}'),
+                label: const Text('Ride'),
                 enabled: ride != null,
               ),
             ],
             selected: {_mode},
             onSelectionChanged: (s) => setState(() => _mode = s.first),
           ),
+          if (_mode == _Mode.ride && _rides.length > 1)
+            SegmentedButton<int>(
+              style: _barButtonStyle,
+              showSelectedIcon: false,
+              segments: [
+                for (var i = 0; i < _rides.length; i++)
+                  ButtonSegment(
+                    value: i,
+                    icon: Icon(
+                      _rides[i].path.kind == 'monorail'
+                          ? Icons.train
+                          : Icons.cable,
+                    ),
+                    label: Text(
+                      _rides[i].path.kind == 'monorail'
+                          ? 'Line 2 monorail'
+                          : 'Yangtze cableway',
+                    ),
+                  ),
+              ],
+              selected: {_rideIndex},
+              onSelectionChanged: (s) => setState(() {
+                _rideIndex = s.first;
+                _rideYaw = 0;
+                _ridePitch = -0.15;
+              }),
+            ),
           _timeControl(wide),
           SegmentedButton<Weather>(
             style: _barButtonStyle,

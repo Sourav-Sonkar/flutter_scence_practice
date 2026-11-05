@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter_scene/scene.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
@@ -44,6 +46,14 @@ class CityLook {
   /// glass reflect the real sky (clouds, dusk colours, city glow) instead of
   /// the default studio map. Re-baked only when the sky visibly changes.
   SkyEnvironment? skyLighting;
+
+  /// Whether the current preset wants the tilt-shift blur (the view turns
+  /// it off while riding, where it would just smear the scenery).
+  bool depthOfField = false;
+
+  /// Whether the preset allows screen-space reflections at all; they only
+  /// actually run from dusk on (by day the muddy river barely reflects).
+  bool _reflections = false;
   int _lightLevel = -1;
   double _lastHour = -1;
   double _gradeSat = -1, _gradeTemp = -1, _emissive = -1;
@@ -53,6 +63,8 @@ class CityLook {
     _weather = weather;
     final high = quality == Quality.high, medium = quality == Quality.medium;
     final fog = weather == Weather.fog, rain = weather == Weather.rain;
+    depthOfField = (high || medium) && !fog;
+    _reflections = high || medium;
 
     _light
       ..castsShadow = true
@@ -85,10 +97,10 @@ class CityLook {
       screenSpaceReflectionsMaxDistance: 2500,
       screenSpaceReflectionsThickness: 4,
       screenSpaceReflectionsStride: high ? 6 : 10,
-      screenSpaceReflectionsMaxSteps: high ? 128 : 64,
+      screenSpaceReflectionsMaxSteps: high ? 128 : 48,
       screenSpaceReflectionsBlur: 0.15,
       screenSpaceReflectionsDistanceFadeStart: 0.6,
-      screenSpaceReflectionsResolutionScale: high ? 1.0 : 0.5,
+      screenSpaceReflectionsResolutionScale: high ? 1.0 : 0.4,
       // Always on: at night the glow is what makes the city.
       bloomEnabled: true,
       bloomScatter: 0.75,
@@ -136,14 +148,19 @@ class CityLook {
 
     // The sun owns the shadow light by day, the moon by night.
     final useMoon = sky.sunIntensity < sky.moonIntensity * 2.5;
+    final dir = useMoon ? -sky.moon : -sky.sun;
+    // The city's shadows are cached (static casters), and turning the light
+    // throws the cache away, so the light only turns in 1° steps. Colour and
+    // brightness still change smoothly.
+    if (_light.direction.normalized().dot(dir) < cos(1 * pi / 180)) {
+      _light.direction = dir;
+    }
     if (useMoon) {
       _light
-        ..direction = -sky.moon
         ..color = vm.Vector3(0.55, 0.66, 1.0)
         ..intensity = sky.moonIntensity;
     } else {
       _light
-        ..direction = -sky.sun
         ..color = sky.sunColor
         ..intensity = sky.sunIntensity;
     }
@@ -216,6 +233,7 @@ class CityLook {
       // glare, so reflections stay near the physical strength and slightly
       // blurred; at night the lit city mirrors strongly in calm dark water.
       scene.screenSpaceReflections
+        ..enabled = _reflections && (night > 0.25 || rain)
         ..intensity = 1.0 + 3.5 * night
         ..blur = 0.35 - 0.2 * night;
       water

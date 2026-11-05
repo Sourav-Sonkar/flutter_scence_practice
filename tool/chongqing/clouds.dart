@@ -19,7 +19,12 @@ void main() {
   _bake('clouds_layered.png', seed: 29, freq: 1.3, stretch: 3.0);
 }
 
-void _bake(String name, {required int seed, required double freq, required double stretch}) {
+void _bake(
+  String name, {
+  required int seed,
+  required double freq,
+  required double stretch,
+}) {
   const width = 512, height = 128;
   final n = FastNoiseLite(seed: seed)
     ..noiseType = NoiseType.openSimplex2

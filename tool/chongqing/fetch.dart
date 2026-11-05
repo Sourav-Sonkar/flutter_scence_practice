@@ -43,6 +43,7 @@ Future<void> main(List<String> args) async {
   way["place"="square"]($bbox);
   node["natural"="tree"]($bbox);
   way["waterway"="river"]($bbox);
+  node["railway"~"station|halt"]($bbox);
 );
 out geom;
 ''';
