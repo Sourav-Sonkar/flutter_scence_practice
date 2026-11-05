@@ -28,7 +28,8 @@ enum DetailType {
   treeBanyan, // Ficus microcarpa: broad, glossy, dark
   treeGinkgo, // narrow, light yellow-green
   shrub,
-  bougainvillea, // magenta, planted along Yuzhong's bridges and roadsides
+  planter, // long, low green planter boxes along bridge railings
+  streetLamp, // pole at the road edge; local +x is the arm, pointing at the road
   crown, // LED band around the top of a skyscraper, lit at night
 }
 
@@ -250,6 +251,7 @@ class CityBuilder {
   CityBuild build(List<Map<String, dynamic>> elements) {
     final covers = <(Cover, List<P2>)>[];
     final featured = <Map<String, Object>>[];
+    final monorailLines = <List<P2>>[];
     final rivers = <List<P2>>[];
     final homes = MeshLayer('buildings', hasUv: true);
     final towers = MeshLayer('towers', hasUv: true);
@@ -325,8 +327,8 @@ class CityBuilder {
           _count('monorail tunnel pieces skipped');
           continue;
         }
-        final track = _monorail(structures, _line(e));
-        if (track.length > 1) monorail.add(track);
+        // Built after all roads, so the track can clear elevated roads.
+        monorailLines.add(_line(e));
       } else if (coverFor(tags) case final cover?
           when !tags.containsKey('building')) {
         for (final ring in _rings(e)) {
@@ -351,6 +353,12 @@ class CityBuilder {
       )
       ..sort((a, b) => (b['height'] as num).compareTo(a['height'] as num));
     landmarks.insertAll(0, featured);
+    // The track is built after all roads so it can clear road bridges.
+    for (final line in monorailLines) {
+      final track = _monorail(structures, line);
+      if (track.length > 1) monorail.add(track);
+    }
+
     final runs = _chain(monorail);
     if (runs.isNotEmpty) {
       rides.insert(0, (
@@ -359,7 +367,7 @@ class CityBuilder {
         points: runs.first,
       ));
     }
-    // Masks keep trees off buildings and roads.
+    // Masks keep trees off buildings, roads and the monorail corridor.
     final built = Mask(terrain);
     for (final r in _buildingRings) {
       built.markRing(r);
@@ -368,6 +376,12 @@ class CityBuilder {
     for (final r in _roadRuns) {
       for (final (x, z) in r.pts) {
         paved.markDisc(x, z, r.half + 1);
+      }
+    }
+    for (final track in monorail) {
+      for (final (x, _, z) in track) {
+        // Wide enough that even a broad huangge canopy stays clear of the beam.
+        paved.markDisc(x, z, 12);
       }
     }
     final ground = _terrainLayer(covers);
@@ -549,7 +563,7 @@ class CityBuilder {
         if (rng.next() < p) _tree(px, pz, rng, park: green);
       }
     }
-    // Street trees along main roads, and bougainvillea along bridge edges.
+    // Street trees along main roads, and planters along bridge railings.
     for (final r in _roadRuns) {
       final major = const {
         'primary',
@@ -567,20 +581,46 @@ class CityBuilder {
         dx /= len;
         dz /= len;
         for (final side in [-1.0, 1.0]) {
-          if (r.bridge) {
-            final off = r.half - 0.6;
+          if (r.bridge && k % 3 == 1) {
+            // One planter per ~12 m along the railing.
+            final off = r.half - 0.7;
             final x = r.pts[k].$1 - dz * off * side,
                 z = r.pts[k].$2 + dx * off * side;
-            _addPlant(
-              DetailType.bougainvillea,
-              x,
-              r.heights[k],
-              z,
-              1.1,
-              1.6,
-              rng,
-            );
-          } else if (k % 3 == 1) {
+            _details.add((
+              type: DetailType.planter,
+              x: x,
+              y: r.heights[k],
+              z: z,
+              sx: 0.9,
+              sy: 0.8,
+              sz: 6.0,
+              rot: atan2(dx, dz), // long side along the railing
+            ));
+            _count('bridge planters');
+          }
+          if (k % 8 == 4) {
+            // A street lamp standing on the road edge (or bridge deck), its
+            // arm reaching over the road.
+            final off = r.half + (r.bridge ? -0.3 : 1.0);
+            final x = r.pts[k].$1 - dz * off * side,
+                z = r.pts[k].$2 + dx * off * side;
+            if (_inside(x, z) && !built.at(x, z)) {
+              // Local +x after rotation must point back toward the road.
+              final tx = dz * side, tz = -dx * side;
+              _details.add((
+                type: DetailType.streetLamp,
+                x: x,
+                y: r.bridge ? r.heights[k] : terrain.heightAt(x, z),
+                z: z,
+                sx: 1,
+                sy: 1,
+                sz: 1,
+                rot: atan2(-tz, tx),
+              ));
+              _count('street lamps');
+            }
+          }
+          if (!r.bridge && k % 3 == 1) {
             final off = r.half + 2.5;
             final x = r.pts[k].$1 - dz * off * side,
                 z = r.pts[k].$2 + dx * off * side;
@@ -1091,6 +1131,10 @@ class CityBuilder {
       final runPts = [for (final k in run) pts[k]];
       final runHeights = [for (final k in run) heights[k]];
       _ribbon(roads, runPts, runHeights, half, color);
+      if (_elevated(tags)) {
+        // A real deck: sides and an underside below the road surface.
+        _slab(structures, runPts, runHeights, half + 0.3, 1.4, (176, 174, 168));
+      }
       _roadRuns.add((
         pts: runPts,
         heights: runHeights,
@@ -1106,8 +1150,9 @@ class CityBuilder {
     List<P2> pts,
     List<double> heights,
     double half,
-    Rgb rgb,
-  ) {
+    Rgb rgb, {
+    bool facingUp = true,
+  }) {
     int? prevL, prevR;
     for (var k = 0; k < pts.length; k++) {
       final a = pts[max(0, k - 1)], b = pts[min(pts.length - 1, k + 1)];
@@ -1119,9 +1164,89 @@ class CityBuilder {
       final (x, z) = pts[k];
       final l = out.vertex(x - dz * half, heights[k], z + dx * half, rgb);
       final r = out.vertex(x + dz * half, heights[k], z - dx * half, rgb);
-      if (prevL != null) out.quad(prevL, prevR!, r, l, (0, 1, 0));
+      if (prevL != null) {
+        out.quad(prevL, prevR!, r, l, (0, facingUp ? 1 : -1, 0));
+      }
       prevL = l;
       prevR = r;
+    }
+  }
+
+  /// Height of the highest road bridge deck within a few metres of (x, z),
+  /// or -infinity if there is none.
+  double _bridgeDeckNear(double x, double z) {
+    // Bridge samples bucketed on a 20 m grid, built on first use.
+    final index = _bridgeIndex ??= () {
+      final m = <(int, int), List<(double, double, double, double)>>{};
+      for (final r in _roadRuns) {
+        if (!r.bridge) continue;
+        for (var k = 0; k < r.pts.length; k++) {
+          final (px, pz) = r.pts[k];
+          m.putIfAbsent(((px / 20).floor(), (pz / 20).floor()), () => []).add((
+            px,
+            pz,
+            r.heights[k],
+            r.half + 4,
+          ));
+        }
+      }
+      return m;
+    }();
+    var best = double.negativeInfinity;
+    final cx = (x / 20).floor(), cz = (z / 20).floor();
+    for (var ox = -1; ox <= 1; ox++) {
+      for (var oz = -1; oz <= 1; oz++) {
+        for (final (px, pz, h, reach)
+            in index[(cx + ox, cz + oz)] ??
+                const <(double, double, double, double)>[]) {
+          final dx = px - x, dz = pz - z;
+          if (dx * dx + dz * dz < reach * reach) best = max(best, h);
+        }
+      }
+    }
+    return best;
+  }
+
+  Map<(int, int), List<(double, double, double, double)>>? _bridgeIndex;
+
+  /// The underside and two sides of a deck whose top surface is drawn
+  /// elsewhere: bridges and the monorail beam. Without it a deck is a
+  /// one-sided sheet, invisible from below (from the monorail, say).
+  void _slab(
+    MeshLayer out,
+    List<P2> pts,
+    List<double> heights,
+    double half,
+    double depth,
+    Rgb rgb,
+  ) {
+    _ribbon(
+      out,
+      pts,
+      [for (final h in heights) h - depth],
+      half,
+      rgb,
+      facingUp: false,
+    );
+    for (final side in [-1.0, 1.0]) {
+      int? prevTop, prevBottom;
+      for (var k = 0; k < pts.length; k++) {
+        final a = pts[max(0, k - 1)], b = pts[min(pts.length - 1, k + 1)];
+        var dx = b.$1 - a.$1, dz = b.$2 - a.$2;
+        final len = sqrt(dx * dx + dz * dz);
+        if (len < 1e-6) continue;
+        dx /= len;
+        dz /= len;
+        final x = pts[k].$1 + side * -dz * half,
+            z = pts[k].$2 + side * dx * half;
+        final t = out.vertex(x, heights[k], z, rgb);
+        final bt = out.vertex(x, heights[k] - depth, z, rgb);
+        if (prevTop != null) {
+          out.quad(prevBottom!, bt, t, prevTop, (side * -dz, 0, side * dx));
+        }
+        prevTop = t;
+        prevBottom = bt;
+      }
     }
   }
 
@@ -1163,8 +1288,14 @@ class CityBuilder {
     final pts = _resample(line, 4);
     // Ride ~8 m above the ground, smoothed so the beam doesn't follow every
     // bump, and never closer than 5 m.
+    // Line 2 runs on a viaduct well above street level, and over any road
+    // bridge it crosses.
     final raw = [
-      for (final (x, z) in pts) max(terrain.heightAt(x, z), riverLevel) + 8,
+      for (final (x, z) in pts)
+        max(
+          max(terrain.heightAt(x, z), riverLevel) + 11,
+          _bridgeDeckNear(x, z) + 7,
+        ),
     ];
     final heights = List<double>.generate(raw.length, (k) {
       var s = 0.0, n = 0;
@@ -1173,30 +1304,15 @@ class CityBuilder {
         n++;
       }
       final ground = max(terrain.heightAt(pts[k].$1, pts[k].$2), riverLevel);
-      return max(s / n, ground + 5);
+      return max(
+        max(s / n, ground + 8),
+        _bridgeDeckNear(pts[k].$1, pts[k].$2) + 6,
+      );
     });
     const beam = (196, 198, 200);
     // Beam: a 1.6 m wide, 2 m deep box swept along the track.
     _ribbon(out, pts, heights, 0.8, beam);
-    _ribbon(out, pts, [for (final h in heights) h - 2], 0.8, beam);
-    for (var side = -1; side <= 1; side += 2) {
-      int? prevTop, prevBottom;
-      for (var k = 0; k < pts.length; k++) {
-        final a = pts[max(0, k - 1)], b = pts[min(pts.length - 1, k + 1)];
-        var dx = b.$1 - a.$1, dz = b.$2 - a.$2;
-        final len = sqrt(dx * dx + dz * dz);
-        dx /= len;
-        dz /= len;
-        final x = pts[k].$1 + side * -dz * 0.8, z = pts[k].$2 + side * dx * 0.8;
-        final t = out.vertex(x, heights[k], z, beam);
-        final bt = out.vertex(x, heights[k] - 2, z, beam);
-        if (prevTop != null) {
-          out.quad(prevBottom!, bt, t, prevTop, (side * -dz, 0, side * dx));
-        }
-        prevTop = t;
-        prevBottom = bt;
-      }
-    }
+    _slab(out, pts, heights, 0.8, 2, beam);
     _piers(out, pts, [for (final h in heights) h - 2], 0.8);
     return [
       for (var k = 0; k < pts.length; k++) (pts[k].$1, heights[k], pts[k].$2),

@@ -64,12 +64,12 @@
   },
   {
    "name": "structures",
-   "vertexCount": 4608,
-   "indexCount": 7620,
+   "vertexCount": 20742,
+   "indexCount": 54834,
    "indexBits": 16,
    "positions": 1992304,
-   "colors": 2047600,
-   "indices": 2066032
+   "colors": 2241208,
+   "indices": 2324176
   }
  ],
  "rides": [
@@ -807,12 +807,13 @@
   "treeBanyan",
   "treeGinkgo",
   "shrub",
-  "bougainvillea",
+  "planter",
+  "streetLamp",
   "crown"
  ],
  "details": {
-  "offset": 2081272,
-  "count": 12415
+  "offset": 2433844,
+  "count": 11380
  },
  "traffic": [
   [
@@ -17592,12 +17593,13 @@
   "monorail tunnel pieces skipped": 5,
   "buildings outside district (skipped)": 12,
   "plaza areas": 5,
-  "plants treeHuangge": 2546,
-  "plants treeBanyan": 1007,
-  "plants treeCamphor": 1968,
-  "plants treeGinkgo": 975,
+  "plants treeHuangge": 2524,
+  "plants treeBanyan": 999,
+  "plants treeCamphor": 1981,
+  "plants treeGinkgo": 983,
   "plants shrub": 53,
-  "plants bougainvillea": 2592,
+  "street lamps": 656,
+  "bridge planters": 910,
   "boat lanes": 4
  }
 }

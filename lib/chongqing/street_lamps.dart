@@ -10,9 +10,12 @@ import 'city_data.dart';
 /// thousands of lamps cheap. Most are old sodium lamps (orange) or warm
 /// LEDs; a handful flicker, as real street lights do.
 class StreetLamps {
-  StreetLamps(List<RidePath> roads) {
+  /// [lamps] are the build tool's street lamp details: pole bases at the
+  /// road edge, rotated so local +x is the arm pointing over the road. The
+  /// head sits at the arm's tip.
+  StreetLamps(List<Detail> lamps) {
     final rnd = Random(9);
-    final geometry = IcosphereGeometry(radius: 0.5, subdivisions: 1);
+    final geometry = CuboidGeometry(vm.Vector3(0.8, 0.2, 0.4));
     InstancedMesh mesh(vm.Vector4 c) => InstancedMesh(
       geometry: geometry,
       material: UnlitMaterial()..baseColorFactor = c,
@@ -20,24 +23,19 @@ class StreetLamps {
     final sodium = mesh(vm.Vector4(2.4, 1.15, 0.38, 1));
     final led = mesh(vm.Vector4(2.1, 1.75, 1.25, 1));
     _flicker = mesh(vm.Vector4(1, 1, 1, 1));
-    for (final road in roads) {
-      final isSodium = rnd.nextDouble() < 0.55; // one lamp type per road
-      for (var s = 10.0; s < road.length; s += 32) {
-        final (p, fwd) = road.sample(s);
-        final right = vm.Vector3(-fwd.z, 0, fwd.x);
-        for (final side in [-1.0, 1.0]) {
-          final m = vm.Matrix4.compose(
-            p + right * (7.5 * side) + vm.Vector3(0, 7, 0),
-            vm.Quaternion.identity(),
-            vm.Vector3.all(1.2),
-          );
-          if (rnd.nextDouble() < 0.02) {
-            _flicker.addInstance(m);
-            _phase.add(rnd.nextDouble() * 100);
-          } else {
-            (isSodium ? sodium : led).addInstance(m);
-          }
-        }
+    for (final lamp in lamps) {
+      final rot = vm.Quaternion.axisAngle(vm.Vector3(0, 1, 0), lamp.rotation);
+      final m = vm.Matrix4.compose(
+        lamp.position + rot.rotated(vm.Vector3(2.0, 7.75, 0)),
+        rot,
+        vm.Vector3.all(1),
+      );
+      final r = rnd.nextDouble();
+      if (r < 0.02) {
+        _flicker.addInstance(m);
+        _phase.add(rnd.nextDouble() * 100);
+      } else {
+        (r < 0.55 ? sodium : led).addInstance(m);
       }
     }
     for (final m in [sodium, led, _flicker]) {

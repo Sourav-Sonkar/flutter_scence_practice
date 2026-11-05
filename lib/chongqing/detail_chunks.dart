@@ -43,10 +43,16 @@ class DetailChunks {
               d.size.y * part.scale.y,
               d.size.z * part.scale.z,
             );
+            final rot = vm.Quaternion.axisAngle(
+              vm.Vector3(0, 1, 0),
+              d.rotation,
+            );
             mesh.addInstance(
               vm.Matrix4.compose(
-                d.position + vm.Vector3(0, d.size.y * part.lift, 0),
-                vm.Quaternion.axisAngle(vm.Vector3(0, 1, 0), d.rotation),
+                d.position +
+                    vm.Vector3(0, d.size.y * part.lift, 0) +
+                    rot.rotated(vm.Vector3(part.side, 0, 0)),
+                rot,
                 size,
               ),
             );
@@ -116,7 +122,13 @@ class DetailChunks {
     ..metallicFactor = 0
     ..roughnessFactor = rough;
 
-  static ({Geometry geometry, Material material, vm.Vector3 scale, double lift})
+  static ({
+    Geometry geometry,
+    Material material,
+    vm.Vector3 scale,
+    double lift,
+    double side,
+  })
   _part(
     Geometry g,
     Material m, {
@@ -124,11 +136,13 @@ class DetailChunks {
     double sy = 1,
     double sz = 1,
     double? lift,
+    double side = 0, // metres along the item's local +x
   }) => (
     geometry: g,
     material: m,
     scale: vm.Vector3(sx, sy, sz),
     lift: lift ?? sy / 2,
+    side: side,
   );
 
   static final Geometry _box = CuboidGeometry(vm.Vector3.all(1));
@@ -149,7 +163,13 @@ class DetailChunks {
 
   /// A tree: trunk up to [trunkTop] of the height, canopy above it.
   static List<
-    ({Geometry geometry, Material material, vm.Vector3 scale, double lift})
+    ({
+      Geometry geometry,
+      Material material,
+      vm.Vector3 scale,
+      double lift,
+      double side,
+    })
   >
   _tree(Geometry canopy, Material leaves, {double trunkTop = 0.45}) => [
     _part(_cylinder, _bark, sx: 0.1, sy: trunkTop + 0.1, sz: 0.1),
@@ -165,7 +185,13 @@ class DetailChunks {
   static final Map<
     String,
     List<
-      ({Geometry geometry, Material material, vm.Vector3 scale, double lift})
+      ({
+        Geometry geometry,
+        Material material,
+        vm.Vector3 scale,
+        double lift,
+        double side,
+      })
     >
   >
   _styles = {
@@ -208,13 +234,37 @@ class DetailChunks {
     'shrub': [_part(_blob, _mat(0.2, 0.38, 0.13, rough: 0.9))],
     // Bougainvillea spills over railings in low, flat clumps of deep pink,
     // not big balls.
-    'bougainvillea': [
+    // Long, low planter boxes along bridge railings: concrete trough with a
+    // hedge on top.
+    'planter': [
+      _part(_box, _mat(0.66, 0.64, 0.6), sy: 0.45),
       _part(
-        _blob,
-        _mat(0.62, 0.14, 0.34, rough: 0.85),
-        sx: 0.8,
+        _box,
+        _mat(0.18, 0.34, 0.13, rough: 0.9),
+        sx: 0.85,
         sy: 0.55,
-        sz: 0.8,
+        sz: 0.95,
+        lift: 0.7,
+      ),
+    ],
+    // Street lamp: an 8 m pole with an arm reaching over the road. The
+    // glowing head at the arm's tip is drawn by StreetLamps (night only).
+    'streetLamp': [
+      _part(
+        _cylinder,
+        _mat(0.3, 0.31, 0.33, rough: 0.5),
+        sx: 0.24,
+        sy: 8,
+        sz: 0.24,
+      ),
+      _part(
+        _box,
+        _mat(0.3, 0.31, 0.33, rough: 0.5),
+        sx: 2.2,
+        sy: 0.16,
+        sz: 0.16,
+        lift: 7.9,
+        side: 1.1,
       ),
     ],
   };

@@ -184,7 +184,8 @@ class _CityViewState extends State<CityView> {
       'treeBanyan',
       'treeGinkgo',
       'shrub',
-      'bougainvillea',
+      'planter',
+      'streetLamp', // poles must reach as far as their glowing heads
     };
     _vegetation = DetailChunks(
       city.details.where((d) => plants.contains(d.type)).toList(),
@@ -204,7 +205,9 @@ class _CityViewState extends State<CityView> {
     _scene
       ..add(_vegetation.root)
       ..add(_rooftops.root);
-    _lamps = StreetLamps(city.traffic);
+    _lamps = StreetLamps(
+      city.details.where((d) => d.type == 'streetLamp').toList(),
+    );
     _scene.add(_lamps.root);
     _movers = Movers(city);
     _scene.add(_movers.root);
