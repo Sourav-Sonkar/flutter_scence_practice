@@ -271,7 +271,8 @@ class _CityViewState extends State<CityView> {
       Node(
           name: 'water',
           mesh: Mesh(
-            PlaneGeometry(width: size.x + 400, depth: size.y + 400),
+            // Far wider than the city, so the river never ends in a void.
+            PlaneGeometry(width: size.x + 30000, depth: size.y + 30000),
             water,
           ),
         )
@@ -684,124 +685,156 @@ class _CityViewState extends State<CityView> {
               shadows: [Shadow(blurRadius: 6)],
             ),
           ),
+          // The two controls used all the time stay on the bar: how you
+          // view the city, and the time of day.
           SegmentedButton<_Mode>(
             style: _barButtonStyle,
+            showSelectedIcon: false,
             segments: [
-              const ButtonSegment(
+              ButtonSegment(
                 value: _Mode.diorama,
-                icon: Icon(Icons.view_in_ar),
-                label: Text('Diorama'),
+                icon: const Icon(Icons.view_in_ar),
+                label: wide ? const Text('Diorama') : null,
+                tooltip: 'Diorama',
               ),
-              const ButtonSegment(
+              ButtonSegment(
                 value: _Mode.drone,
-                icon: Icon(Icons.flight),
-                label: Text('Drone'),
+                icon: const Icon(Icons.flight),
+                label: wide ? const Text('Drone') : null,
+                tooltip: 'Drone',
               ),
               ButtonSegment(
                 value: _Mode.ride,
                 icon: const Icon(Icons.airline_seat_recline_normal),
-                label: const Text('Ride'),
+                label: wide ? const Text('Ride') : null,
+                tooltip: 'Ride',
                 enabled: ride != null,
               ),
             ],
             selected: {_mode},
             onSelectionChanged: (s) => _setMode(s.first),
           ),
-          if (_mode == _Mode.ride && _rides.length > 1)
-            SegmentedButton<int>(
-              style: _barButtonStyle,
-              showSelectedIcon: false,
-              segments: [
-                for (var i = 0; i < _rides.length; i++)
-                  ButtonSegment(
-                    value: i,
-                    icon: Icon(
-                      _rides[i].path.kind == 'monorail'
-                          ? Icons.train
-                          : Icons.cable,
-                    ),
-                    label: Text(
-                      _rides[i].path.kind == 'monorail'
-                          ? 'Line 2 monorail'
-                          : 'Yangtze cableway',
-                    ),
-                  ),
-              ],
-              selected: {_rideIndex},
-              onSelectionChanged: (s) => setState(() {
-                _rideIndex = s.first;
-                _rideYaw = 0;
-                _ridePitch = -0.15;
-              }),
-            ),
+          if (_mode == _Mode.ride && _rides.length > 1) _ridePicker(),
           _timeControl(wide),
-          SegmentedButton<Weather>(
-            style: _barButtonStyle,
-            showSelectedIcon: false,
-            segments: [
-              ButtonSegment(
-                value: Weather.clear,
-                icon: const Icon(Icons.brightness_7_outlined),
-                label: wide ? const Text('Clear') : null,
-                tooltip: 'Clear',
-              ),
-              ButtonSegment(
-                value: Weather.fog,
-                icon: const Icon(Icons.foggy),
-                label: wide ? const Text('Fog') : null,
-                tooltip: 'Fog',
-              ),
-              ButtonSegment(
-                value: Weather.rain,
-                icon: const Icon(Icons.water_drop_outlined),
-                label: wide ? const Text('Rain') : null,
-                tooltip: 'Rain',
-              ),
-            ],
-            selected: {_weather},
-            onSelectionChanged: (s) {
-              setState(() => _weather = s.first);
-              _applyLook();
-            },
-          ),
-          if (_paintedLook != null)
-            SegmentedButton<bool>(
-              style: _barButtonStyle,
-              showSelectedIcon: false,
-              segments: [
-                ButtonSegment(
-                  value: false,
-                  icon: const Icon(Icons.photo_camera_outlined),
-                  label: wide ? const Text('Realistic') : null,
-                  tooltip: 'Realistic',
-                ),
-                ButtonSegment(
-                  value: true,
-                  icon: const Icon(Icons.brush_outlined),
-                  label: wide ? const Text('Painted') : null,
-                  tooltip: 'Painted',
-                ),
-              ],
-              selected: {_painted},
-              onSelectionChanged: (s) => _setPainted(s.first),
-            ),
-          FilledButton.tonal(
-            onPressed: () {
-              setState(
-                () => _quality =
-                    Quality.values[(_q.index + 1) % Quality.values.length],
-              );
-              _applyLook();
-            },
-            child: Text(
-              'Quality: ${switch (_q) {
-                Quality.low => 'Low',
-                Quality.medium => 'Medium',
-                Quality.high => 'High',
-              }}',
-            ),
-          ),
+          _settingsMenu(),
         ],
+      ),
+    );
+  }
+
+  /// Which ride to take, as a compact dropdown shown only while riding.
+  Widget _ridePicker() {
+    String name(int i) => _rides[i].path.kind == 'monorail'
+        ? 'Line 2 monorail'
+        : 'Yangtze cableway';
+    IconData icon(int i) =>
+        _rides[i].path.kind == 'monorail' ? Icons.train : Icons.cable;
+    return _MenuChip(
+      icon: icon(_rideIndex),
+      label: name(_rideIndex),
+      items: [
+        for (var i = 0; i < _rides.length; i++)
+          (
+            icon(i),
+            name(i),
+            i == _rideIndex,
+            () => setState(() {
+              _rideIndex = i;
+              _rideYaw = 0;
+              _ridePitch = -0.15;
+            }),
+          ),
+      ],
+    );
+  }
+
+  /// Weather, style and quality, grouped behind one menu button.
+  Widget _settingsMenu() {
+    final items = <PopupMenuEntry<VoidCallback>>[];
+    void section(String title) {
+      if (items.isNotEmpty) items.add(const PopupMenuDivider());
+      items.add(
+        PopupMenuItem<VoidCallback>(
+          enabled: false,
+          height: 28,
+          child: Text(
+            title,
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+          ),
+        ),
+      );
+    }
+
+    void option(
+      IconData icon,
+      String label,
+      bool selected,
+      VoidCallback onTap,
+    ) {
+      items.add(
+        PopupMenuItem<VoidCallback>(
+          value: onTap,
+          height: 40,
+          child: Row(
+            children: [
+              Icon(icon, size: 20),
+              const SizedBox(width: 12),
+              Expanded(child: Text(label)),
+              if (selected) const Icon(Icons.check, size: 18),
+            ],
+          ),
+        ),
+      );
+    }
+
+    section('Weather');
+    for (final (w, icon, label) in [
+      (Weather.clear, Icons.brightness_7_outlined, 'Clear'),
+      (Weather.fog, Icons.foggy, 'Fog'),
+      (Weather.rain, Icons.water_drop_outlined, 'Rain'),
+    ]) {
+      option(icon, label, _weather == w, () {
+        setState(() => _weather = w);
+        _applyLook();
+      });
+    }
+    if (_paintedLook != null) {
+      section('Style');
+      option(
+        Icons.photo_camera_outlined,
+        'Realistic',
+        !_painted,
+        () => _setPainted(false),
+      );
+      option(
+        Icons.brush_outlined,
+        'Painted',
+        _painted,
+        () => _setPainted(true),
+      );
+    }
+    section('Quality');
+    for (final (q, label) in [
+      (Quality.low, 'Low'),
+      (Quality.medium, 'Medium'),
+      (Quality.high, 'High'),
+    ]) {
+      option(Icons.tune, label, _q == q, () {
+        setState(() => _quality = q);
+        _applyLook();
+      });
+    }
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.88),
+        shape: BoxShape.circle,
+      ),
+      child: PopupMenuButton<VoidCallback>(
+        tooltip: 'Weather, style and quality',
+        icon: const Icon(Icons.more_vert),
+        onSelected: (fn) => fn(),
+        itemBuilder: (_) => items,
       ),
     );
   }
@@ -927,4 +960,57 @@ class _RainPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_RainPainter old) => old.night != night;
+}
+
+/// A small rounded button showing the current choice; tapping opens a menu.
+class _MenuChip extends StatelessWidget {
+  const _MenuChip({
+    required this.icon,
+    required this.label,
+    required this.items,
+  });
+
+  final IconData icon;
+  final String label;
+  final List<(IconData, String, bool, VoidCallback)> items;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.88),
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: PopupMenuButton<VoidCallback>(
+        tooltip: label,
+        onSelected: (fn) => fn(),
+        itemBuilder: (_) => [
+          for (final (icon, text, selected, onTap) in items)
+            PopupMenuItem<VoidCallback>(
+              value: onTap,
+              child: Row(
+                children: [
+                  Icon(icon, size: 20),
+                  const SizedBox(width: 12),
+                  Expanded(child: Text(text)),
+                  if (selected) const Icon(Icons.check, size: 18),
+                ],
+              ),
+            ),
+        ],
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 18),
+              const SizedBox(width: 8),
+              Text(label),
+              const Icon(Icons.arrow_drop_down, size: 20),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }

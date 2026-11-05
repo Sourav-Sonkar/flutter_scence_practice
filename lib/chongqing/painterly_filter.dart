@@ -27,7 +27,8 @@ class PainterlyFilter {
         useFrameInfo: true,
       );
       scene.postProcess.customEffects.add(effect);
-      return PainterlyFilter._(effect)..configure(radius: 4, stride: 1.5);
+      // About a 4 px brush: painterly, but windows survive.
+      return PainterlyFilter._(effect)..configure(radius: 4, stride: 1.0);
     } catch (e) {
       debugPrint('Painterly filter unavailable: $e');
       return null;

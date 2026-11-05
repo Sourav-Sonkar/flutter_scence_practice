@@ -36,6 +36,13 @@ class PaintedLook {
           .setTexture(name, t.sampledTexture!, sampler: t.sampledSampler);
       tex(mats['buildings']!, 'facade', home.color);
       tex(mats['towers']!, 'facade', glass.color);
+      // Windows read clearly on buildings; glass towers reflect the sky.
+      mats['buildings']!.parameters
+        ..setFloat('detail', 1.0)
+        ..setFloat('remap', 1.0);
+      mats['towers']!.parameters
+        ..setFloat('detail', 1.0)
+        ..setFloat('glass', 1.0);
       // Roads and the ground read better a little calmer than the buildings.
       for (final k in ['terrain', 'roads']) {
         mats[k]!.parameters.setFloat('saturation', 1.12);

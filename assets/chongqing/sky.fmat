@@ -66,7 +66,8 @@ sky {
 
   // Cloud density at a point on the cloud layer.
   float cq_density(vec2 uv, float t) {
-    float coverage = material_params.coverage;
+    // Painted skies: fewer clouds overhead (the drama is on the horizon).
+    float coverage = material_params.coverage * mix(1.0, 0.7, material_params.painted);
     float overcast = material_params.overcast;
     float octaves = material_params.detail;
     // Wind carries the layer; a slower field makes shapes grow and fade.
@@ -99,6 +100,42 @@ sky {
     float toSun = max(dot(dir, sun), 0.0);
     col += material_params.sun_color * (pow(toSun, 8.0) * 0.35 + pow(toSun, 64.0) * 0.6)
            * material_params.sun_visible * (1.0 - night);
+
+    // --- painted sky: deeper cobalt, towering cumulus on the horizon ---
+    float painted = material_params.painted;
+    if (painted > 0.01) {
+      // Its own summer gradient: deep cobalt overhead to clear blue at the
+      // horizon, by day only (dusk and night keep the computed colours).
+      float day = (1.0 - night) * (1.0 - material_params.overcast) *
+                  smoothstep(0.0, 0.15, sun.y);
+      vec3 cobalt = mix(vec3(0.26, 0.48, 0.92), vec3(0.03, 0.14, 0.62), pow(h, 0.6));
+      col = mix(col, cobalt, painted * day);
+
+      float banks = painted * (1.0 - material_params.overcast) * (1.0 - night * 0.4);
+      if (banks > 0.01 && up > -0.03 && up < 0.5) {
+        float az = atan(dir.z, dir.x);
+        // A few big cloud heads around the horizon.
+        float profile = cq_fbm(vec2(az * 1.9 + 11.0, 3.7), 4.0);
+        float top = 0.03 + pow(clamp(profile, 0.0, 1.0), 2.4) * 0.55;
+        // Lumpy cauliflower edge, drifting very slowly.
+        vec2 q = vec2(az * 16.0 + t * 0.004, up * 26.0);
+        float lump = cq_fbm(q, 4.0);
+        float edge = up + (lump - 0.5) * 0.06;
+        float inside = smoothstep(top + 0.012, top - 0.008, edge);
+        // Light: tops and the sun-facing side lit, bases cool and shaded.
+        float vt = clamp(up / max(top, 0.01), 0.0, 1.0);
+        vec2 flat_dir = normalize(dir.xz + vec2(1e-4));
+        float facing = dot(flat_dir, normalize(sun.xz + vec2(1e-4)));
+        float lb = smoothstep(0.42, 0.58, vt * 0.75 + lump * 0.45 + facing * 0.12 - 0.12);
+        // Bright white heads with cool blue-grey shadowed undersides.
+        vec3 bank = mix(material_params.cloud_shade * vec3(0.78, 0.86, 1.05),
+                        material_params.cloud_lit * 1.25, lb);
+        bank += material_params.city_glow * 2.0 * night;
+        // The base melts into the horizon haze.
+        bank = mix(bank, material_params.horizon, (1.0 - smoothstep(0.0, 0.25, vt)) * 0.4);
+        col = mix(col, bank, inside * banks);
+      }
+    }
 
     // --- stars ---
     // Stars are round points, not grid cells: the sky is split into cells by
