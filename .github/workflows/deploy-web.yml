@@ -2,6 +2,9 @@
 # folder on the gh-pages branch, so each experience branch can have its own
 # site under https://<user>.github.io/<repo>/<SITE_DIR>/ without overwriting
 # the others.
+#
+# No --enable-flutter-gpu here: on the web flutter_scene uses its own WebGL2
+# backend, and the flag only applies to native platforms.
 name: Deploy web
 
 on:
