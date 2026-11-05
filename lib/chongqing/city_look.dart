@@ -64,7 +64,7 @@ class CityLook {
     scene.directionalLight = _light;
 
     roads.roughnessFactor = rain ? 0.3 : 0.9;
-    water.roughnessFactor = rain ? 0.25 : 0.06;
+    _emissive = -1; // reflections and water refresh on the next update
 
     scene.environmentSettings = EnvironmentSettings(
       toneMapping: ToneMappingMode.aces,
@@ -212,6 +212,20 @@ class CityLook {
     }
     if ((night - _emissive).abs() > 0.01) {
       _emissive = night;
+      // Reflections: by day the rivers are muddy and mostly show soft sky
+      // glare, so reflections stay near the physical strength and slightly
+      // blurred; at night the lit city mirrors strongly in calm dark water.
+      scene.screenSpaceReflections
+        ..intensity = 1.0 + 3.5 * night
+        ..blur = 0.35 - 0.2 * night;
+      water
+        ..roughnessFactor = rain ? 0.25 : 0.1 - 0.07 * night
+        ..baseColorFactor = vm.Vector4(
+          0.16 - 0.11 * night, // muddy green-brown by day, dark at night
+          0.17 - 0.095 * night,
+          0.12 - 0.04 * night,
+          1,
+        );
       final w = 1.4 * night;
       homes.emissiveFactor = vm.Vector4(w, w, w, 1);
       final o = 0.5 * night;
