@@ -352,6 +352,9 @@ class CityBuilder {
         (l) => blockLabel.hasMatch(l['name'] as String) || l['en'] != true,
       )
       ..sort((a, b) => (b['height'] as num).compareTo(a['height'] as num));
+    for (final f in featured) {
+      f['featured'] = true;
+    }
     landmarks.insertAll(0, featured);
     // The track is built after all roads so it can clear road bridges.
     for (final line in monorailLines) {

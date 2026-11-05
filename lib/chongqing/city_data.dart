@@ -73,7 +73,10 @@ class CityData {
   final String attribution;
   final vm.Aabb2 bounds; // x, z in metres
   final double riverLevel;
-  final Map<String, MeshGeometry> layers;
+
+  /// Geometry tiles: [kind] is the layer type (terrain, buildings, towers,
+  /// roads, structures), [bounds] the tile's box.
+  final List<({String kind, MeshGeometry geometry, vm.Aabb3 bounds})> layers;
   final List<Landmark> landmarks;
   final List<RidePath> rides;
   final List<Detail> details;
@@ -81,34 +84,6 @@ class CityData {
   final List<RidePath> boatLanes;
 
   vm.Vector2 get center => bounds.center;
-
-  /// Loads several districts and merges them into one city. Districts are
-  /// built around the same origin (tool/chongqing/districts.dart), so their
-  /// geometry already lines up. Layers are keyed "district/layer".
-  static Future<CityData> loadAll(String title, List<String> districts) async {
-    final parts = await Future.wait(districts.map(load));
-    if (parts.length == 1) return parts.first;
-    final bounds = vm.Aabb2.copy(parts.first.bounds);
-    for (final p in parts.skip(1)) {
-      bounds.hull(p.bounds);
-    }
-    return CityData._(
-      [for (final p in parts) ...p.traffic],
-      [for (final p in parts) ...p.boatLanes],
-      [for (final p in parts) ...p.details],
-      title,
-      parts.first.attribution,
-      bounds,
-      parts.first.riverLevel,
-      {
-        for (var i = 0; i < parts.length; i++)
-          for (final e in parts[i].layers.entries)
-            '${districts[i]}/${e.key}': e.value,
-      },
-      [for (final p in parts) ...p.landmarks],
-      [for (final p in parts) ...p.rides],
-    );
-  }
 
   /// Rebuilds a terrain grid (heights + colours only in the file) into a
   /// mesh, with the same two-triangles-per-cell pattern the build tool
@@ -165,7 +140,7 @@ class CityData {
       raw.buffer.asUint8List(raw.offsetInBytes, raw.lengthInBytes),
     );
 
-    final layers = <String, MeshGeometry>{};
+    final layers = <({String kind, MeshGeometry geometry, vm.Aabb3 bounds})>[];
     for (final l in (meta['layers'] as List).cast<Map<String, dynamic>>()) {
       final n = l['vertexCount'] as int;
       final srgb = bytes.buffer.asUint8List(l['colors'] as int, n * 4);
@@ -175,18 +150,24 @@ class CityData {
         colors[i] = i % 4 == 3 ? 1.0 : pow(srgb[i] / 255, 2.2).toDouble();
       }
       final grid = l['grid'] as Map<String, dynamic>?;
+      final b = (l['bounds'] as List?)?.cast<num>();
+      final box = b == null
+          ? vm.Aabb3()
+          : vm.Aabb3.minMax(
+              vm.Vector3(b[0].toDouble(), b[1].toDouble(), b[2].toDouble()),
+              vm.Vector3(b[3].toDouble(), b[4].toDouble(), b[5].toDouble()),
+            );
       if (grid != null) {
-        layers[l['name'] as String] = _gridMesh(
-          grid,
-          bytes,
-          l['heights'] as int,
-          colors,
-        );
+        layers.add((
+          kind: l['name'] as String,
+          geometry: _gridMesh(grid, bytes, l['heights'] as int, colors),
+          bounds: box,
+        ));
         continue;
       }
       final indexOffset = l['indices'] as int;
       final indexCount = l['indexCount'] as int;
-      layers[l['name'] as String] = MeshGeometry.fromArrays(
+      final geometry = MeshGeometry.fromArrays(
         positions: bytes.buffer.asFloat32List(l['positions'] as int, n * 3),
         texCoords: l['uvs'] == null
             ? null
@@ -196,6 +177,7 @@ class CityData {
             ? bytes.buffer.asUint16List(indexOffset, indexCount)
             : bytes.buffer.asUint32List(indexOffset, indexCount),
       );
+      layers.add((kind: l['name'] as String, geometry: geometry, bounds: box));
     }
 
     final b = meta['bounds'] as Map<String, dynamic>;
@@ -265,6 +247,77 @@ class CityData {
             for (final p in r['points'] as List) v3(p as List),
           ]),
       ],
+    );
+  }
+}
+
+/// What the app knows about every district before loading any of them
+/// (assets/chongqing/index.json, written by tool/chongqing/build.dart):
+/// bounds for streaming, landmarks for the shortcut chips.
+class CityIndex {
+  CityIndex._(
+    this.title,
+    this.districts,
+    this.bounds,
+    this.riverLevel,
+    this.landmarks,
+  );
+
+  final String title;
+
+  /// District name to its x/z bounds.
+  final Map<String, vm.Aabb2> districts;
+  final vm.Aabb2 bounds;
+  final double riverLevel;
+  final List<Landmark> landmarks;
+
+  vm.Vector2 get center => bounds.center;
+
+  static Future<CityIndex> load(String title) async {
+    final json = jsonDecode(
+      await rootBundle.loadString('assets/chongqing/index.json'),
+    ) as Map<String, dynamic>;
+    final ds = (json['districts'] as Map).cast<String, dynamic>();
+    final districts = <String, vm.Aabb2>{};
+    final landmarks = <Landmark>[];
+    double d(Object? v) => (v as num).toDouble();
+    final featured = <Landmark>[], towers = <(double, Landmark)>[];
+    for (final name in ds.keys) {
+      final b = ds[name]['bounds'] as Map<String, dynamic>;
+      districts[name] = vm.Aabb2.minMax(
+        vm.Vector2(d(b['minX']), d(b['minZ'])),
+        vm.Vector2(d(b['maxX']), d(b['maxZ'])),
+      );
+      for (final l
+          in (ds[name]['landmarks'] as List).cast<Map<String, dynamic>>()) {
+        final lm = Landmark(
+          l['name'] as String,
+          vm.Vector3(d(l['x']), d(l['y']), d(l['z'])),
+          d(l['ground']),
+          d(l['height']),
+        );
+        if (l['featured'] == true) {
+          featured.add(lm);
+        } else {
+          towers.add((lm.height, lm));
+        }
+      }
+    }
+    // Famous places first, then the tallest named towers.
+    towers.sort((a, b) => b.$1.compareTo(a.$1));
+    landmarks
+      ..addAll(featured)
+      ..addAll(towers.map((t) => t.$2));
+    final bounds = vm.Aabb2.copy(districts.values.first);
+    for (final b in districts.values.skip(1)) {
+      bounds.hull(b);
+    }
+    return CityIndex._(
+      title,
+      districts,
+      bounds,
+      d(json['riverLevel']),
+      landmarks,
     );
   }
 }

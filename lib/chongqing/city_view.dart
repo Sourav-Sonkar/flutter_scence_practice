@@ -9,26 +9,18 @@ import 'package:vector_math/vector_math.dart' as vm;
 import 'city_data.dart';
 import 'city_look.dart';
 import 'clouds.dart';
-import 'crowns.dart';
-import 'detail_chunks.dart';
+import 'district_scene.dart';
+import 'street_lamps.dart' show RainPainter;
 import 'facade_textures.dart';
-import 'movers.dart';
 import 'ride_vehicles.dart';
 import 'sky.dart';
-import 'street_lamps.dart';
 
 enum _Mode { diorama, ride }
 
 /// A miniature district of Chongqing built from OpenStreetMap data.
 /// Diorama mode orbits the city; ride mode follows a cableway or monorail.
 class CityView extends StatefulWidget {
-  const CityView({
-    super.key,
-    this.districts = const ['jialing_riverside', 'yuzhong_tip'],
-  });
-
-  /// Districts built by tool/chongqing, loaded side by side.
-  final List<String> districts;
+  const CityView({super.key});
 
   @override
   State<CityView> createState() => _CityViewState();
@@ -36,7 +28,14 @@ class CityView extends StatefulWidget {
 
 class _CityViewState extends State<CityView> {
   final Scene _scene = Scene();
-  CityData? _city;
+  CityIndex? _city;
+
+  // District streaming: districts load when the camera comes within
+  // [_loadDistance] of them and are hidden beyond [_hideDistance].
+  final Map<String, DistrictScene> _districts = {};
+  final Set<String> _loading = {};
+  late final Map<String, Material> _materials;
+  static const double _loadDistance = 3500, _hideDistance = 6000;
   Object? _error;
 
   // Diorama camera: a node with a camera and an orbit controller.
@@ -49,16 +48,18 @@ class _CityViewState extends State<CityView> {
   late final CameraComponent _rideCamera;
   double _rideYaw = 0, _ridePitch = -0.15;
 
-  final List<RideVehicles> _rides = [];
+  List<RideVehicles> get _rides => [
+    for (final d in _districts.values) ...d.rides,
+  ];
   int _rideIndex = 0;
-  RideVehicles? get _ride => _rides.isEmpty ? null : _rides[_rideIndex];
-  late final DetailChunks _rooftops;
-  late final DetailChunks _vegetation;
+  RideVehicles? get _ride {
+    final rides = _rides;
+    return rides.isEmpty ? null : rides[_rideIndex.clamp(0, rides.length - 1)];
+  }
+
   late final CityLook _look;
-  late final StreetLamps _lamps;
   CloudTextures? _clouds;
   PreprocessedSky? _shaderSky;
-  late final LedCrowns _crowns;
 
   /// Local clock time in hours (0-24). Starts on a warm afternoon.
   final ValueNotifier<double> _hour = ValueNotifier(15.5);
@@ -69,7 +70,6 @@ class _CityViewState extends State<CityView> {
   late SkyState _sky = SkyState(15.5, overcast: false, foggy: false);
   Weather _weather = Weather.clear;
   final ValueNotifier<double> _clock = ValueNotifier(0);
-  late final Movers _movers;
 
   _Mode _mode = _Mode.diorama;
   // Decided from the platform and screen size on first layout: laptops and
@@ -117,10 +117,7 @@ class _CityViewState extends State<CityView> {
   Future<void> _load() async {
     try {
       await Scene.initializeStaticResources();
-      final city = await CityData.loadAll(
-        'Chongqing · Yuzhong',
-        widget.districts,
-      );
+      final city = await CityIndex.load('Chongqing · Yuzhong');
       _clouds = await CloudTextures.load();
       try {
         _shaderSky = await loadFmatSky('assets/chongqing/sky.fmat');
@@ -128,7 +125,15 @@ class _CityViewState extends State<CityView> {
         debugPrint('Shader sky unavailable: $e');
       }
       _build(city);
-      if (mounted) setState(() => _city = city);
+      _city = city;
+      // Load the districts around the starting view before showing it;
+      // the rest stream in as the camera moves.
+      await Future.wait([
+        for (final e in city.districts.entries)
+          if (_distanceTo(e.value, vm.Vector3(0, 0, 0)) < _loadDistance)
+            _loadDistrict(e.key),
+      ]);
+      if (mounted) setState(() {});
     } catch (e, s) {
       debugPrint('City load failed: $e\n$s');
       if (mounted) setState(() => _error = e);
@@ -141,7 +146,47 @@ class _CityViewState extends State<CityView> {
         ..metallicFactor = 0
         ..roughnessFactor = roughness;
 
-  void _build(CityData city) {
+  /// Horizontal distance from [eye] to a district's box (0 inside it).
+  static double _distanceTo(vm.Aabb2 b, vm.Vector3 eye) {
+    final dx = eye.x.clamp(b.min.x, b.max.x) - eye.x;
+    final dz = eye.z.clamp(b.min.y, b.max.y) - eye.z;
+    return sqrt(dx * dx + dz * dz);
+  }
+
+  Future<void> _loadDistrict(String name) async {
+    if (_districts.containsKey(name) || !_loading.add(name)) return;
+    try {
+      final data = await CityData.load(name);
+      final district = DistrictScene(name, data, _materials)..setQuality(_q);
+      _districts[name] = district;
+      _scene.add(district.root);
+      if (mounted) setState(() {}); // new rides for the picker
+    } catch (e) {
+      debugPrint('District $name failed to load: $e');
+    } finally {
+      _loading.remove(name);
+    }
+  }
+
+  /// Loads districts the camera is approaching and hides far ones. A
+  /// district with the active ride always stays visible.
+  void _stream(vm.Vector3 eye) {
+    final city = _city;
+    if (city == null) return;
+    final riding = _mode == _Mode.ride ? _ride : null;
+    for (final e in city.districts.entries) {
+      final d = _distanceTo(e.value, eye);
+      final loaded = _districts[e.key];
+      if (loaded == null) {
+        if (d < _loadDistance && _loading.isEmpty) _loadDistrict(e.key);
+        continue;
+      }
+      final hasRide = riding != null && loaded.rides.contains(riding);
+      loaded.visible = hasRide || d < _hideDistance;
+    }
+  }
+
+  void _build(CityIndex city) {
     final homeTex = FacadeTextures.residential(),
         glassTex = FacadeTextures.glass();
     final homes = _pbr(0.75)
@@ -161,56 +206,7 @@ class _CityViewState extends State<CityView> {
       'roads': roads,
       'structures': _pbr(0.6),
     };
-    city.layers.forEach((name, geometry) {
-      final kind = name.split('/').last; // keys are "district/layer"
-      _scene.add(
-        Node(name: name, mesh: Mesh(geometry, materials[kind] ?? _pbr(0.8)))
-          ..frustumCulled = false
-          // Ground and roads are flat or gentle: casting shadows from them
-          // barely shows but costs a full re-draw per shadow cascade.
-          ..castsShadows = kind != 'terrain' && kind != 'roads'
-          // The city never moves, so its shadow maps can be cached and only
-          // redrawn when the sun does.
-          ..shadowStatic = true,
-      );
-    });
-
-    // Small details in map tiles that only draw near the camera. Trees
-    // carry the green look, so they stay visible much farther out than
-    // rooftop clutter.
-    const plants = {
-      'treeHuangge',
-      'treeCamphor',
-      'treeBanyan',
-      'treeGinkgo',
-      'shrub',
-      'planter',
-      'streetLamp', // poles must reach as far as their glowing heads
-    };
-    _vegetation = DetailChunks(
-      city.details.where((d) => plants.contains(d.type)).toList(),
-      // Big tiles keep the draw count low across two districts.
-      tileSize: 600,
-      showWithin: 2400,
-    );
-    _rooftops = DetailChunks(
-      city.details
-          .where((d) => !plants.contains(d.type) && d.type != 'crown')
-          .toList(),
-      tileSize: 400,
-      castsShadows: false, // too small to matter, costly per cascade
-    );
-    _crowns = LedCrowns(city.details.where((d) => d.type == 'crown').toList());
-    _scene.add(_crowns.root);
-    _scene
-      ..add(_vegetation.root)
-      ..add(_rooftops.root);
-    _lamps = StreetLamps(
-      city.details.where((d) => d.type == 'streetLamp').toList(),
-    );
-    _scene.add(_lamps.root);
-    _movers = Movers(city);
-    _scene.add(_movers.root);
+    _materials = materials;
 
     // River surface, a little larger than the district so edges stay wet.
     final size = city.bounds.max - city.bounds.min;
@@ -275,12 +271,6 @@ class _CityViewState extends State<CityView> {
     _rideNode.addComponent(_rideCamera);
     _scene.add(_rideNode);
 
-    // Vehicles for every ride: cable car cabins, Line 2 trains.
-    final ridesNode = Node(name: 'rides');
-    _scene.add(ridesNode);
-    for (final ride in city.rides) {
-      _rides.add(RideVehicles(ride, ridesNode));
-    }
     if (_shaderSky != null) {
       _look
         ..skybox = Skybox(_shaderSky!)
@@ -292,11 +282,9 @@ class _CityViewState extends State<CityView> {
   void _applyLook() {
     _look.configure(weather: _weather, quality: _q);
     _updateSky();
-    // Low keeps trees to a shorter range to save phones some work.
-    _vegetation
-      ..showWithin = _q == Quality.low ? 1300 : 2400
-      // Tree shadows look great but every cascade re-draws every tree.
-      ..setCastsShadows(_q == Quality.high);
+    for (final d in _districts.values) {
+      d.setQuality(_q);
+    }
   }
 
   void _updateSky() {
@@ -368,27 +356,24 @@ class _CityViewState extends State<CityView> {
     final cz = t.z.clamp(city.bounds.min.y, city.bounds.max.y);
     if (cx != t.x || cz != t.z) _orbit.target = vm.Vector3(cx, t.y, cz);
 
-    _advanceRide(dt);
-    _movers.update(
-      dt,
-      showCars: _mode == _Mode.ride || _orbit.distance < 900,
-      night: _sky.night > 0.5,
-    );
+    _advanceRide();
     _clock.value += dt;
     _shaderSky?.parameters.setFloat('time', _clock.value);
     if (_playing) _hour.value = (_hour.value + dt / _secondsPerHour) % 24;
     if (_hour.value != _sky.hour) _updateSky();
-    _lamps.update(_clock.value, _sky.night);
-    _crowns.update(_clock.value, _sky.night);
     final eye = _mode == _Mode.diorama
         ? _orbitNode.globalTransform.getTranslation()
         : _rideNode.globalTransform.getTranslation();
-    _vegetation.update(eye);
-    _rooftops.update(
-      _mode == _Mode.diorama
-          ? _orbitNode.globalTransform.getTranslation()
-          : _rideNode.globalTransform.getTranslation(),
-    );
+    _stream(eye);
+    for (final d in _districts.values) {
+      d.update(
+        dt,
+        eye,
+        time: _clock.value,
+        night: _sky.night,
+        showCars: _mode == _Mode.ride || _orbit.distance < 900,
+      );
+    }
     // Tilt-shift is a diorama effect; riding, it would only smear the view.
     final dof = _mode == _Mode.diorama && _look.depthOfField;
     if (_scene.depthOfField.enabled != dof) _scene.depthOfField.enabled = dof;
@@ -405,10 +390,9 @@ class _CityViewState extends State<CityView> {
     }
   }
 
-  void _advanceRide(double dt) {
-    for (final r in _rides) {
-      r.update(dt);
-    }
+  /// Puts the ride camera in the active ride's lead vehicle. (Vehicles
+  /// themselves are moved by their district.)
+  void _advanceRide() {
     final ride = _ride;
     if (ride != null && _mode == _Mode.ride) {
       final (eye, look) = ride.riderView(_rideYaw, _ridePitch);
@@ -518,7 +502,7 @@ class _CityViewState extends State<CityView> {
     selectedBackgroundColor: const Color(0xffe2d9ff),
   );
 
-  Widget _topBar(CityData city) {
+  Widget _topBar(CityIndex city) {
     final ride = _ride;
     final wide = MediaQuery.sizeOf(context).width >= 900;
     return Padding(
@@ -687,7 +671,7 @@ class _CityViewState extends State<CityView> {
     ),
   );
 
-  Widget _landmarkStrip(CityData city) => SizedBox(
+  Widget _landmarkStrip(CityIndex city) => SizedBox(
     height: 40,
     child: ListView.separated(
       scrollDirection: Axis.horizontal,
@@ -705,7 +689,7 @@ class _CityViewState extends State<CityView> {
     ),
   );
 
-  Widget _attribution(CityData city) => Text(
+  Widget _attribution(CityIndex city) => Text(
     '© OpenStreetMap contributors',
     style: const TextStyle(
       color: Colors.white70,

@@ -1,0 +1,179 @@
+{
+ "districts": {
+  "yuzhong_tip": {
+   "title": "Yuzhong Peninsula Tip",
+   "bounds": {
+    "minX": -968.3053915823007,
+    "maxX": 968.3053915823007,
+    "minZ": -884.5920000002955,
+    "maxZ": 884.5919999999026
+   },
+   "riverLevel": 160.7,
+   "landmarks": [
+    {
+     "name": "Chongqing World Financial Center",
+     "x": -565.435478044656,
+     "y": 621.724693679481,
+     "z": -213.91646040015647,
+     "ground": 281.724693679481,
+     "height": 340,
+     "en": true
+    },
+    {
+     "name": "Yingli Tower",
+     "x": -815.4438609396462,
+     "y": 541.8770205300065,
+     "z": 165.6509093999082,
+     "ground": 253.87702053000646,
+     "height": 288,
+     "en": true
+    },
+    {
+     "name": "World Trade Centre Chongqing",
+     "x": -898.3550100939793,
+     "y": 534.3250991452969,
+     "z": -79.23129709100228,
+     "ground": 272.325099145297,
+     "height": 262,
+     "en": true
+    },
+    {
+     "name": "Tower 5",
+     "x": 452.9054808042993,
+     "y": 444.81237549717446,
+     "z": -851.6464767002718,
+     "ground": 194.81237549717443,
+     "height": 250,
+     "en": true
+    },
+    {
+     "name": "Tower 1",
+     "x": 171.4844640856058,
+     "y": 445.5282745535451,
+     "z": -858.1565209501383,
+     "ground": 195.52827455354506,
+     "height": 250,
+     "en": true
+    },
+    {
+     "name": "Tower 6",
+     "x": 467.9384220091816,
+     "y": 445.932300018157,
+     "z": -738.833353200192,
+     "ground": 195.932300018157,
+     "height": 250,
+     "en": true
+    },
+    {
+     "name": "The Westin Chongqing Liberation Square",
+     "x": -355.6860056470901,
+     "y": 533.3328642098285,
+     "z": 20.360359199807984,
+     "ground": 288.3328642098285,
+     "height": 245,
+     "en": true
+    },
+    {
+     "name": "Xinhua International Building",
+     "x": -700.4575956892738,
+     "y": 500.79821901795583,
+     "z": 137.50982639985395,
+     "ground": 261.79821901795583,
+     "height": 239,
+     "en": true
+    },
+    {
+     "name": "Evergrande Liberation Monument Centre Tower 1",
+     "x": -498.84242652843136,
+     "y": 487.00475732314294,
+     "z": 290.1498617998531,
+     "ground": 264.00475732314294,
+     "height": 223,
+     "en": true
+    },
+    {
+     "name": "Chongqing Time Square",
+     "x": -635.7094349176767,
+     "y": 450.5748803496686,
+     "z": -112.90711140014699,
+     "ground": 255.5748803496686,
+     "height": 195,
+     "en": true
+    },
+    {
+     "name": "Marriott Executive Apartments Chongqing",
+     "x": -893.3461478603731,
+     "y": 430.3863616332589,
+     "z": 182.58704521858527,
+     "ground": 273.3863616332589,
+     "height": 157,
+     "en": true
+    },
+    {
+     "name": "Hyatt Regency Liberation Square",
+     "x": -491.9451334292891,
+     "y": 416.5387697101184,
+     "z": 39.911685299818785,
+     "ground": 279.5387697101184,
+     "height": 137,
+     "en": true
+    }
+   ],
+   "rides": [
+    "cableway"
+   ]
+  },
+  "jialing_riverside": {
+   "title": "Jialing Riverside",
+   "bounds": {
+    "minX": -5325.679653699213,
+    "maxX": -968.3053915823007,
+    "minZ": -1105.7400000001728,
+    "maxZ": 1105.73999999978
+   },
+   "riverLevel": 160.7,
+   "landmarks": [
+    {
+     "name": "Liziba Station",
+     "x": -4461.728534168691,
+     "y": 257.6121616402206,
+     "z": 479.71424159979966,
+     "ground": 217.61216164022062,
+     "height": 40,
+     "featured": true
+    },
+    {
+     "name": "People's Square",
+     "x": -3067.4980900241712,
+     "y": 247.89296916976537,
+     "z": -522.2385286343546,
+     "ground": 217.89296916976537,
+     "height": 30,
+     "featured": true
+    },
+    {
+     "name": "Chongqing People's Grand Hall",
+     "x": -2905.862134627906,
+     "y": 288.0751585523447,
+     "z": -486.44394535402444,
+     "ground": 223.5751585523447,
+     "height": 65,
+     "featured": true
+    },
+    {
+     "name": "Chongqing Poly Tower",
+     "x": -1242.159101665348,
+     "y": 561.2143658178876,
+     "z": 8.108391419885134,
+     "ground": 274.4143658178876,
+     "height": 287,
+     "en": true
+    }
+   ],
+   "rides": [
+    "monorail"
+   ]
+  }
+ },
+ "riverLevel": 160.7
+}

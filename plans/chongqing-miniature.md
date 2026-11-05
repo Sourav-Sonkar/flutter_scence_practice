@@ -238,3 +238,21 @@ west edge. Loaded side by side with district 1 (`CityData.loadAll`).
   from dusk. **Open: night views toward the horizon run at about 27 FPS** (both districts'
   full geometry plus glow). Next options: load or draw only districts near the camera,
   or a cheaper far-distance terrain.
+
+## District streaming (2026-11-05)
+
+- **Tiles**: the build splits every layer into 1200 m tiles (each with its bounding box).
+  The engine frustum-culls tiles that are off screen; roads and small structures are also
+  dropped beyond 2.5 km, where they are under a pixel wide. 640 m tiles were tried first
+  and were slower (too many draw calls); 1200 m is the measured sweet spot.
+- **District index**: `assets/chongqing/index.json` (written by the build) lists every
+  district's bounds, landmarks and rides. The app loads only the index at start-up, then
+  loads a district when the camera comes within 3.5 km and hides it beyond 6 km. A
+  district carrying the active ride always stays visible.
+- **One node per district** (`DistrictScene`): geometry tiles, trees, rooftops, lamps,
+  crowns, traffic, boats and ride vehicles, shown or hidden together.
+- **Results (Chrome, Medium)**: day diorama 34 to 35 FPS; night horizon view 37 to 40 FPS
+  (was 27); Line 2 night ride 39 FPS (was about 25); cableway ride 63 FPS (district 2
+  hidden).
+- **Adding a district** is now: add it to `districts.dart`, run fetch and build. The index
+  updates and the app streams it in, with no app changes.
