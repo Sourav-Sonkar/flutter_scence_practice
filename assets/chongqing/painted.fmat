@@ -1,0 +1,85 @@
+// Painted look for the city: soft, flat, hand-painted shading in a few
+// bands instead of realistic light, in the spirit of classic hand-drawn
+// animation backgrounds.
+//
+// It reads the engine's real sun (direction, colour) and its cascaded
+// shadows, then shades in bands: sunlit, a soft terminator, and a cool,
+// slightly violet shadow side (painters' shadows are coloured, not grey).
+// Upward faces catch the sky, so roofs and lawns stay bright and airy.
+//
+// The painted colour is written as emissive with a black, rough, non-
+// reflective base, so the engine adds no realistic lighting on top. Fog,
+// exposure and tone mapping still apply afterwards, keeping it consistent
+// with the sky and the rest of the scene.
+material {
+  name: "ChongqingPainted",
+  shading_model: lit,
+  blending: opaque,
+  culling: back,
+  parameters: [
+    { type: sampler2d, name: facade, hint: default_white },
+    { type: sampler2d, name: lights, hint: default_black },
+    { type: float, name: lights_strength, default: 0.0 },
+    { type: vec3, name: sky_light, default: [0.62, 0.72, 0.95] },
+    { type: vec3, name: shade_tint, default: [0.52, 0.5, 0.78] },
+    { type: vec3, name: ground_bounce, default: [0.55, 0.5, 0.4] },
+    { type: float, name: light_scale, default: 0.46 },
+    { type: float, name: saturation, default: 1.3 },
+    // How much of the window texture shows: painted backgrounds suggest
+    // windows with soft bands rather than drawing every pane.
+    { type: float, name: detail, default: 0.35 },
+    { type: float, name: band_softness, default: 0.06 },
+  ],
+}
+
+fragment {
+  void Surface(inout MaterialInputs material) {
+    vec4 tex = texture(facade, GetUV0());
+    vec3 albedo = GetVertexColor().rgb * mix(vec3(1.0), tex.rgb, material_params.detail);
+    // Painted colours: a touch more saturated than life.
+    float grey = dot(albedo, vec3(0.299, 0.587, 0.114));
+    albedo = max(mix(vec3(grey), albedo, material_params.saturation), 0.0);
+
+    vec3 n = GetWorldNormal();
+    vec3 pos = GetWorldPosition();
+
+    float lit = 0.0;
+    vec3 sun = vec3(0.0);
+    if (frag_info.has_directional_light > 0.5) {
+      vec3 l = -normalize(frag_info.directional_light_direction.xyz);
+      sun = frag_info.directional_light_color.rgb;
+      float soft = material_params.band_softness;
+      float ndl = smoothstep(-soft, soft, dot(n, l));
+      float shadow = 1.0;
+#ifndef FLUTTER_SCENE_SKIP_SHADOWS
+      if (frag_info.casts_shadow > 0.5) {
+        // Snap the shadow edge so it reads as a painted shape, not a blur.
+        shadow = smoothstep(0.35, 0.65, SampleShadow(pos, n));
+      }
+#endif
+      lit = ndl * shadow;
+    }
+
+    // Shadow side: albedo in a cool, coloured shade, lifted by the sky
+    // above and warm bounce light from the ground below.
+    float up = n.y * 0.5 + 0.5;
+    vec3 ambient = mix(material_params.ground_bounce, material_params.sky_light, up);
+    vec3 shaded = albedo * material_params.shade_tint * ambient * 0.78;
+
+    // Sunlit side: albedo in the sun's colour, in one flat band.
+    vec3 sunlit = albedo * (ambient * 0.4 + sun * material_params.light_scale);
+
+    // A narrow warm rim right at the light/shadow boundary, as painters do.
+    float rim = lit * (1.0 - lit) * 4.0;
+    vec3 colour = mix(shaded, sunlit, lit) + sun * albedo * rim * 0.06;
+
+    // Night windows still glow.
+    colour += texture(lights, GetUV0()).rgb * material_params.lights_strength;
+
+    material.base_color = vec4(0.0, 0.0, 0.0, 1.0);
+    material.metallic = 0.0;
+    material.roughness = 1.0;
+    material.specular = 0.0;
+    material.emissive = colour;
+  }
+}

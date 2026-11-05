@@ -294,3 +294,25 @@ camera to fight.
 - Takes off behind and above where the current view was looking.
 - The collision data and `WalkWorld` (with its tests) are reused; `walker.dart` is gone.
 - Chrome, Medium: about 44 to 48 FPS flying.
+
+## Painted style prototype (2026-11-05)
+
+A **Realistic / Painted** toggle: a hand-painted, anime-inspired look (named "Painted",
+not after any studio, to avoid trademark issues).
+- **`assets/chongqing/painted.fmat`**: a lit `.fmat` surface that reads the engine's sun and
+  cascaded shadows, then shades in flat bands: sunlit, a soft terminator with a thin
+  warm rim, and a cool violet shadow side lifted by sky light from above and warm ground
+  bounce from below. Windows are reduced to soft bands by day and still glow at night.
+  It outputs through emissive with a black, non-reflective base, so fog, exposure and
+  tone mapping still apply.
+- One painted instance per layer kind, swapped onto every geometry tile live
+  (`DistrictScene.setMaterials`). Per-frame colours follow the sky (`PaintedLook`).
+- **Sky**: painted mode gives fewer, bigger cumulus with crisp edges and two-tone light.
+- **Grade**: softer contrast, slightly brighter and warmer. **River**: clear teal.
+- **Note**: a new `.fmat` under `assets/chongqing/` needs
+  `rm -rf .dart_tool/hooks_runner/flutter_scene_practice` once before building.
+- **Measured (Chrome, Medium)**: day 31 to 36 FPS, sunset 36 FPS, night 24 to 28 FPS (the
+  engine still runs its full lighting under the painted output).
+- **Next for Painted**: soft outlines; paper / brush texture; painted trees, details and
+  vehicles (still realistic materials); a painted water shader; brighter noon (the sun
+  overhead flattens the shading); night speed (skip the engine lighting cost).

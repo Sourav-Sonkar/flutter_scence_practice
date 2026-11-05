@@ -15,6 +15,7 @@ import 'district_scene.dart';
 import 'street_lamps.dart' show RainPainter;
 import 'facade_textures.dart';
 import 'joystick.dart';
+import 'painted_look.dart';
 import 'ride_vehicles.dart';
 import 'sky.dart';
 import 'drone.dart';
@@ -40,6 +41,13 @@ class _CityViewState extends State<CityView> {
   final Map<String, DistrictScene> _districts = {};
   final Set<String> _loading = {};
   late final Map<String, Material> _materials;
+
+  // Style: realistic PBR or the hand-painted, anime-inspired look.
+  PaintedLook? _paintedLook;
+  bool _painted = false;
+  late final FacadeTextures _homeTex, _glassTex;
+  Map<String, Material> get _activeMaterials =>
+      _painted && _paintedLook != null ? _paintedLook!.materials : _materials;
   static const double _loadDistance = 3500, _hideDistance = 6000;
   Object? _error;
 
@@ -153,6 +161,7 @@ class _CityViewState extends State<CityView> {
         debugPrint('Shader sky unavailable: $e');
       }
       _build(city);
+      _paintedLook = await PaintedLook.load(_homeTex, _glassTex);
       _city = city;
       // Load the districts around the starting view before showing it;
       // the rest stream in as the camera moves.
@@ -185,7 +194,8 @@ class _CityViewState extends State<CityView> {
     if (_districts.containsKey(name) || !_loading.add(name)) return;
     try {
       final data = await CityData.load(name);
-      final district = DistrictScene(name, data, _materials)..setQuality(_q);
+      final district = DistrictScene(name, data, _activeMaterials)
+        ..setQuality(_q);
       _walkWorld.add(data.walk);
       _districts[name] = district;
       _scene.add(district.root);
@@ -216,8 +226,8 @@ class _CityViewState extends State<CityView> {
   }
 
   void _build(CityIndex city) {
-    final homeTex = FacadeTextures.residential(),
-        glassTex = FacadeTextures.glass();
+    final homeTex = _homeTex = FacadeTextures.residential();
+    final glassTex = _glassTex = FacadeTextures.glass();
     final homes = _pbr(0.75)
       ..baseColorTexture = homeTex.color
       ..emissiveTexture = homeTex.lights.first;
@@ -318,6 +328,16 @@ class _CityViewState extends State<CityView> {
     _applyLook();
   }
 
+  void _setPainted(bool painted) {
+    setState(() => _painted = painted);
+    final mats = _activeMaterials;
+    for (final d in _districts.values) {
+      d.setMaterials(mats);
+    }
+    _look.painted = painted;
+    _applyLook(); // reconfigures the grade and pushes sky + paint params
+  }
+
   void _applyLook() {
     _look.configure(weather: _weather, quality: _q);
     _updateSky();
@@ -333,6 +353,7 @@ class _CityViewState extends State<CityView> {
       foggy: _weather == Weather.fog,
     );
     _look.update(_sky, _hour.value);
+    if (_painted) _paintedLook?.update(_sky, _hour.value);
     _pushSkyParams();
   }
 
@@ -357,7 +378,8 @@ class _CityViewState extends State<CityView> {
       ..setFloat('overcast', s.cloudOvercast)
       ..setVec3('cloud_lit', s.cloudLit)
       ..setVec3('cloud_shade', s.cloudShade)
-      ..setFloat('detail', _q == Quality.low ? 3 : 5);
+      ..setFloat('detail', _q == Quality.low ? 3 : 5)
+      ..setFloat('painted', _painted ? 1 : 0);
     // Re-bake the sky lighting only when the sky has visibly changed.
     // Every half in-game hour (5 s of real time while playing) is plenty:
     // ambient light changes slowly, and each bake costs GPU time.
@@ -733,6 +755,27 @@ class _CityViewState extends State<CityView> {
               _applyLook();
             },
           ),
+          if (_paintedLook != null)
+            SegmentedButton<bool>(
+              style: _barButtonStyle,
+              showSelectedIcon: false,
+              segments: [
+                ButtonSegment(
+                  value: false,
+                  icon: const Icon(Icons.photo_camera_outlined),
+                  label: wide ? const Text('Realistic') : null,
+                  tooltip: 'Realistic',
+                ),
+                ButtonSegment(
+                  value: true,
+                  icon: const Icon(Icons.brush_outlined),
+                  label: wide ? const Text('Painted') : null,
+                  tooltip: 'Painted',
+                ),
+              ],
+              selected: {_painted},
+              onSelectionChanged: (s) => _setPainted(s.first),
+            ),
           FilledButton.tonal(
             onPressed: () {
               setState(

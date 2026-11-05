@@ -59,6 +59,9 @@ class CityLook {
   double _gradeSat = -1, _gradeTemp = -1, _emissive = -1;
   late final DirectionalLight _light = DirectionalLight(castsShadow: true);
 
+  /// Whether the Painted style is active (changes the colour grade).
+  bool painted = false;
+
   void configure({required Weather weather, required Quality quality}) {
     _weather = weather;
     final high = quality == Quality.high, medium = quality == Quality.medium;
@@ -204,14 +207,20 @@ class CityLook {
 
     // Colour grading rebuilds its lookup when touched, so only change it in
     // visible steps.
-    final sat = fog || rain ? 1.05 : 1.35 - 0.15 * night;
-    final temp = 0.06 + 0.16 * sky.golden - 0.1 * night;
+    // Painted: softer contrast and a warm, slightly faded, sunny palette
+    // (the materials already add saturation, so the grade stays gentle).
+    final sat = painted
+        ? (fog || rain ? 1.0 : 1.12 - 0.1 * night)
+        : (fog || rain ? 1.05 : 1.35 - 0.15 * night);
+    final temp = 0.06 + 0.16 * sky.golden - 0.1 * night + (painted ? 0.05 : 0);
     if ((sat - _gradeSat).abs() > 0.02 || (temp - _gradeTemp).abs() > 0.01) {
       _gradeSat = sat;
       _gradeTemp = temp;
       scene.postProcess.colorGrading
         ..saturation = sat
-        ..temperature = temp;
+        ..temperature = temp
+        ..contrast = painted ? 0.94 : 1.1
+        ..brightness = painted ? 1.06 : 1.0;
     }
     // Bloom: only the brightest lights glow, a little more so at night.
     scene.postProcess.bloom
@@ -238,12 +247,20 @@ class CityLook {
         ..blur = 0.35 - 0.2 * night;
       water
         ..roughnessFactor = rain ? 0.25 : 0.1 - 0.07 * night
-        ..baseColorFactor = vm.Vector4(
-          0.16 - 0.11 * night, // muddy green-brown by day, dark at night
-          0.17 - 0.095 * night,
-          0.12 - 0.04 * night,
-          1,
-        );
+        ..baseColorFactor = painted
+            // Painted: a clear teal river, deepening to blue at night.
+            ? vm.Vector4(
+                0.1 - 0.07 * night,
+                0.36 - 0.27 * night,
+                0.4 - 0.25 * night,
+                1,
+              )
+            : vm.Vector4(
+                0.16 - 0.11 * night, // muddy green-brown by day, dark at night
+                0.17 - 0.095 * night,
+                0.12 - 0.04 * night,
+                1,
+              );
       final w = 1.4 * night;
       homes.emissiveFactor = vm.Vector4(w, w, w, 1);
       final o = 0.5 * night;

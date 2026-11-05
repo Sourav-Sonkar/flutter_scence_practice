@@ -33,6 +33,7 @@ class DistrictScene {
       if (tile.kind == 'roads' || tile.kind == 'structures') {
         _farHidden.add((node, tile.bounds));
       }
+      _tiles.add((node, tile.kind, tile.geometry));
       root.add(node);
     }
 
@@ -90,6 +91,15 @@ class DistrictScene {
   late final Movers movers;
   final List<RideVehicles> rides = [];
   final List<(Node, vm.Aabb3)> _farHidden = [];
+  final List<(Node, String, Geometry)> _tiles = [];
+
+  /// Re-skins every geometry tile with [materials] (realistic or painted),
+  /// keyed by layer kind.
+  void setMaterials(Map<String, Material> materials) {
+    for (final (node, kind, geometry) in _tiles) {
+      node.mesh = Mesh(geometry, materials[kind]!);
+    }
+  }
 
   bool get visible => root.visible;
   set visible(bool v) {
