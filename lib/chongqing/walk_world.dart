@@ -4,10 +4,10 @@ import 'package:vector_math/vector_math.dart' as vm;
 
 import 'city_data.dart';
 
-/// What a person walking around the city collides with, merged from every
-/// loaded district: the terrain (slopes and steps follow the heightmap),
-/// bridge decks (walk on them, or underneath them), building walls (slide
-/// along them) and the rivers (stop at the water's edge).
+/// What moves through the city collides with, merged from every loaded
+/// district: the terrain heightmap, bridge decks (on top of them, or
+/// underneath), building walls (slide along them, unless above the roof)
+/// and the rivers. Used by the drone.
 class WalkWorld {
   final List<TerrainGrid> _grids = [];
   double riverLevel = 0;
@@ -105,9 +105,24 @@ class WalkWorld {
   /// Pushes a walker of [radius] at [pos] out of any building whose roof is
   /// above its head, so it slides along walls instead of passing through.
   void resolveWalls(vm.Vector3 pos, double radius) {
-    final cx = (pos.x / _wallCell).floor(), cz = (pos.z / _wallCell).floor();
     for (var pass = 0; pass < 2; pass++) {
-      for (final wall in _walls[(cx, cz)] ?? const <_Wall>[]) {
+      // Every wall whose cell the walker's circle touches (a wall is listed
+      // in each cell its box overlaps, so near a cell edge both are needed).
+      final seen = <_Wall>{};
+      for (
+        var cx = ((pos.x - radius) / _wallCell).floor();
+        cx <= ((pos.x + radius) / _wallCell).floor();
+        cx++
+      ) {
+        for (
+          var cz = ((pos.z - radius) / _wallCell).floor();
+          cz <= ((pos.z + radius) / _wallCell).floor();
+          cz++
+        ) {
+          seen.addAll(_walls[(cx, cz)] ?? const <_Wall>[]);
+        }
+      }
+      for (final wall in seen) {
         if (wall.top < pos.y + 1.5) continue; // low enough to stand on
         if (pos.x < wall.minX - radius ||
             pos.x > wall.maxX + radius ||

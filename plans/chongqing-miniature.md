@@ -278,3 +278,19 @@ A person to explore the streets, before more districts.
 - Streaming follows the walker. Chrome, Medium: about 36 to 40 FPS walking.
 - **Later**: stop the camera going inside buildings behind the walker; jump; other
   pedestrians.
+
+## Drone mode replaces walk mode (2026-11-05)
+
+The walker clipped (the follow camera went inside buildings and trees behind it), so it
+was replaced with a first-person drone: with no character, there is nothing for the
+camera to fight.
+- **`Drone`**: free flight with inertia. Stays at least 18 m above the ground and any
+  bridge deck (above trees and lamps), below 1.5 km; slides around buildings taller than
+  it; can fly over rooftops. Speed scales with height (12 m/s low to 160 m/s high, Shift
+  for 4x).
+- **Controls**: WASD / arrows to fly, Space or E up, Q or C down, Shift boost, drag to
+  look, scroll to climb. On touch, two sticks like a real drone controller: left climbs
+  and turns, right flies.
+- Takes off behind and above where the current view was looking.
+- The collision data and `WalkWorld` (with its tests) are reused; `walker.dart` is gone.
+- Chrome, Medium: about 44 to 48 FPS flying.

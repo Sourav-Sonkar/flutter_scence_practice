@@ -2,6 +2,7 @@ import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart' hide Material;
+import 'package:flutter/gestures.dart' show PointerScrollEvent;
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_scene/scene.dart';
@@ -16,10 +17,10 @@ import 'facade_textures.dart';
 import 'joystick.dart';
 import 'ride_vehicles.dart';
 import 'sky.dart';
+import 'drone.dart';
 import 'walk_world.dart';
-import 'walker.dart';
 
-enum _Mode { diorama, ride, walk }
+enum _Mode { diorama, ride, drone }
 
 /// A miniature district of Chongqing built from OpenStreetMap data.
 /// Diorama mode orbits the city; ride mode follows a cableway or monorail.
@@ -52,25 +53,25 @@ class _CityViewState extends State<CityView> {
   late final CameraComponent _rideCamera;
   double _rideYaw = 0, _ridePitch = -0.15;
 
-  // Walking: a person on the streets, followed by a third-person camera.
-  final Node _walkNode = Node(name: 'walk camera');
-  late final CameraComponent _walkCamera;
-  late final FollowCameraController _follow;
-  final Walker _walker = Walker();
+  // Drone: a free-flying first-person camera that can't clip into things.
+  final Node _droneNode = Node(name: 'drone camera');
+  late final CameraComponent _droneCamera;
+  final Drone _drone = Drone();
   final WalkWorld _walkWorld = WalkWorld();
-  final ValueNotifier<vm.Vector2> _stick = ValueNotifier(vm.Vector2.zero());
-  bool _spawned = false;
+  final ValueNotifier<vm.Vector2> _flyStick = ValueNotifier(vm.Vector2.zero());
+  final ValueNotifier<vm.Vector2> _liftStick = ValueNotifier(vm.Vector2.zero());
+  double _scrollLift = 0;
 
   Camera get _camera => switch (_mode) {
     _Mode.diorama => _orbitCamera.toCamera(),
     _Mode.ride => _rideCamera.toCamera(),
-    _Mode.walk => _walkCamera.toCamera(),
+    _Mode.drone => _droneCamera.toCamera(),
   };
 
   Node get _cameraNode => switch (_mode) {
     _Mode.diorama => _orbitNode,
     _Mode.ride => _rideNode,
-    _Mode.walk => _walkNode,
+    _Mode.drone => _droneNode,
   };
 
   List<RideVehicles> get _rides => [
@@ -122,7 +123,8 @@ class _CityViewState extends State<CityView> {
     _stats.dispose();
     _clock.dispose();
     _hour.dispose();
-    _stick.dispose();
+    _flyStick.dispose();
+    _liftStick.dispose();
     super.dispose();
   }
 
@@ -298,30 +300,15 @@ class _CityViewState extends State<CityView> {
     _rideNode.addComponent(_rideCamera);
     _scene.add(_rideNode);
 
-    _walkCamera = CameraComponent(
+    _droneCamera = CameraComponent(
       projection: PerspectiveProjection(
-        fovRadiansY: 55 * vm.degrees2Radians,
-        near: 0.3,
+        fovRadiansY: 60 * vm.degrees2Radians,
+        near: 0.5,
         far: 9000,
       ),
     );
-    _follow = FollowCameraController(
-      followTarget: _walker.root,
-      distance: 7,
-      lookHeight: 1.5,
-      pitch: 0.32,
-      minDistance: 2,
-      maxDistance: 80,
-      minPitch: -0.1,
-      maxPitch: 1.35,
-      smoothing: 0.12,
-    );
-    _walkNode
-      ..addComponent(_walkCamera)
-      ..addComponent(_follow);
-    _scene
-      ..add(_walkNode)
-      ..add(_walker.root..visible = false);
+    _droneNode.addComponent(_droneCamera);
+    _scene.add(_droneNode);
 
     if (_shaderSky != null) {
       _look
@@ -409,11 +396,8 @@ class _CityViewState extends State<CityView> {
     _shaderSky?.parameters.setFloat('time', _clock.value);
     if (_playing) _hour.value = (_hour.value + dt / _secondsPerHour) % 24;
     if (_hour.value != _sky.hour) _updateSky();
-    if (_mode == _Mode.walk) _updateWalk(dt);
-    // Stream around the walker when walking (the camera can swing wide).
-    final eye = _mode == _Mode.walk
-        ? _walker.position
-        : _cameraNode.globalTransform.getTranslation();
+    if (_mode == _Mode.drone) _updateDrone(dt);
+    final eye = _cameraNode.globalTransform.getTranslation();
     _stream(eye);
     for (final d in _districts.values) {
       d.update(
@@ -442,51 +426,65 @@ class _CityViewState extends State<CityView> {
   }
 
   void _setMode(_Mode mode) {
-    if (mode == _Mode.walk && !_walkWorld.isEmpty) {
-      // Drop the walker in where the diorama camera is looking, facing away
-      // from the camera, so the view carries on naturally.
-      final from = _mode == _Mode.diorama ? _orbit.target : _walker.position;
-      if (!_spawned || _mode == _Mode.diorama) {
-        _walker.spawn(_walkWorld, from.x, from.z);
-        final f = _camera.forward;
-        _walker.heading = atan2(f.x, f.z);
-        _follow.orbitBy(_walker.heading - _follow.yaw, 0);
-        _spawned = true;
-      }
+    if (mode == _Mode.drone && _mode != _Mode.drone) {
+      // Take off from just behind and above where the current view looks,
+      // facing the same way, so the view carries on naturally.
+      final eye = _cameraNode.globalTransform.getTranslation();
+      final f = _camera.forward;
+      final flat = vm.Vector3(f.x, 0, f.z)..normalize();
+      final focus = _mode == _Mode.diorama ? _orbit.target : eye + f * 60;
+      final start = focus - flat * 120 + vm.Vector3(0, 70, 0);
+      final ground = _walkWorld.terrainAt(start.x, start.z) ?? start.y;
+      start.y = max(start.y, ground + 60);
+      _drone.place(start, (focus - start)..normalize());
+      _updateDrone(0);
     }
-    _walker.root.visible = mode == _Mode.walk;
     setState(() => _mode = mode);
   }
 
-  /// Keyboard (WASD / arrows, Shift to run) plus the on-screen stick.
-  void _updateWalk(double dt) {
+  /// Keyboard (WASD / arrows, Space/E up, Q/C down, Shift boost), scroll,
+  /// and the two on-screen sticks.
+  void _updateDrone(double dt) {
     final keys = HardwareKeyboard.instance.logicalKeysPressed;
-    bool down(LogicalKeyboardKey a, LogicalKeyboardKey b) =>
-        keys.contains(a) || keys.contains(b);
-    final input = vm.Vector2(
-      (down(LogicalKeyboardKey.keyD, LogicalKeyboardKey.arrowRight)
+    bool down(List<LogicalKeyboardKey> any) => any.any(keys.contains);
+    final move = vm.Vector2(
+      (down([LogicalKeyboardKey.keyD, LogicalKeyboardKey.arrowRight])
               ? 1.0
               : 0.0) -
-          (down(LogicalKeyboardKey.keyA, LogicalKeyboardKey.arrowLeft)
+          (down([LogicalKeyboardKey.keyA, LogicalKeyboardKey.arrowLeft])
               ? 1.0
               : 0.0),
-      (down(LogicalKeyboardKey.keyW, LogicalKeyboardKey.arrowUp) ? 1.0 : 0.0) -
-          (down(LogicalKeyboardKey.keyS, LogicalKeyboardKey.arrowDown)
+      (down([LogicalKeyboardKey.keyW, LogicalKeyboardKey.arrowUp])
+              ? 1.0
+              : 0.0) -
+          (down([LogicalKeyboardKey.keyS, LogicalKeyboardKey.arrowDown])
               ? 1.0
               : 0.0),
-    )..add(_stick.value);
-    final run =
-        keys.contains(LogicalKeyboardKey.shiftLeft) ||
-        keys.contains(LogicalKeyboardKey.shiftRight) ||
-        _stick.value.length > 0.92;
-    _walker.update(
+    )..add(_flyStick.value);
+    var lift =
+        (down([LogicalKeyboardKey.space, LogicalKeyboardKey.keyE])
+            ? 1.0
+            : 0.0) -
+        (down([LogicalKeyboardKey.keyQ, LogicalKeyboardKey.keyC]) ? 1.0 : 0.0) +
+        _liftStick.value.y +
+        _scrollLift;
+    lift = lift.clamp(-1.0, 1.0);
+    _scrollLift *= max(0.0, 1 - dt * 6); // a scroll nudge fades out
+    final boost = down([
+      LogicalKeyboardKey.shiftLeft,
+      LogicalKeyboardKey.shiftRight,
+    ]);
+    _drone.update(
       dt,
       _walkWorld,
-      input,
-      _follow.forward,
-      _follow.right,
-      run: run,
+      move: move,
+      lift: lift,
+      turn: _liftStick.value.x * 1.4,
+      boost: boost,
+      riverLevel: _city?.riverLevel ?? 0,
     );
+    final p = _drone.position;
+    _droneNode.lookAtFrom(p, p + _drone.forward);
   }
 
   /// Puts the ride camera in the active ride's lead vehicle. (Vehicles
@@ -553,8 +551,19 @@ class _CityViewState extends State<CityView> {
           ),
         if (_mode == _Mode.diorama)
           CameraControls(controller: _orbit, child: view)
-        else if (_mode == _Mode.walk)
-          CameraControls(controller: _follow, child: view)
+        else if (_mode == _Mode.drone)
+          Listener(
+            onPointerSignal: (e) {
+              if (e is PointerScrollEvent) {
+                _scrollLift -= e.scrollDelta.dy * 0.02;
+              }
+            },
+            child: GestureDetector(
+              onPanUpdate: (d) =>
+                  _drone.look(d.delta.dx * 0.004, d.delta.dy * 0.004),
+              child: view,
+            ),
+          )
         else
           GestureDetector(
             onPanUpdate: (d) => setState(() {
@@ -576,19 +585,27 @@ class _CityViewState extends State<CityView> {
             ),
           ),
         SafeArea(child: _topBar(city)),
-        if (_mode == _Mode.walk)
+        if (_mode == _Mode.drone) ...[
+          // Two sticks like a real drone controller: left climbs and turns,
+          // right flies.
           Positioned(
             left: 24,
             bottom: 36,
-            child: SafeArea(child: Joystick(value: _stick)),
+            child: SafeArea(child: Joystick(value: _liftStick, size: 112)),
           ),
-        if (_mode == _Mode.walk)
           Positioned(
-            right: 16,
-            bottom: 32,
+            right: 24,
+            bottom: 36,
+            child: SafeArea(child: Joystick(value: _flyStick, size: 112)),
+          ),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 12,
             child: IgnorePointer(
               child: Text(
-                'WASD / arrows to walk · Shift to run · drag to look · scroll to zoom',
+                'WASD / arrows to fly · Space or E up · Q or C down · Shift boost · drag to look · scroll to climb',
+                textAlign: TextAlign.center,
                 style: const TextStyle(
                   color: Colors.white,
                   fontSize: 12,
@@ -597,6 +614,7 @@ class _CityViewState extends State<CityView> {
               ),
             ),
           ),
+        ],
         if (_mode == _Mode.diorama)
           Positioned(
             left: 0,
@@ -644,9 +662,9 @@ class _CityViewState extends State<CityView> {
                 label: Text('Diorama'),
               ),
               const ButtonSegment(
-                value: _Mode.walk,
-                icon: Icon(Icons.directions_walk),
-                label: Text('Walk'),
+                value: _Mode.drone,
+                icon: Icon(Icons.flight),
+                label: Text('Drone'),
               ),
               ButtonSegment(
                 value: _Mode.ride,
