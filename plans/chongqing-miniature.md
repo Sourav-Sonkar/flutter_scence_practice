@@ -190,3 +190,24 @@ Asset size: 3.7 MB. Runs at 60 FPS on the iOS simulator on High.
   tint at night. Rain uses a lighter, higher haze.
 - Chrome, Medium: about 35 to 45 FPS across clear, fog, rain and night.
 - **Later**: cloud shadows on the city; a more dramatic sunset.
+
+## Fifth round (2026-11-05): shader sky with real 3D clouds
+
+The painted 2D clouds looked flat, barely moved and didn't match the city's colours. They
+are replaced by a sky shader, `assets/chongqing/sky.fmat` (flutter_scene's `.fmat` sky
+domain, compiled by the build hook):
+- Gradient, sunward glow, city light pollution, sun disc, moon and stars.
+- A cloud layer high above the city, traced per pixel, so clouds have true perspective
+  (large overhead, thin streaks at the horizon). Wind moves it and a slower field
+  reshapes it. Clouds self-shadow toward the sun, glow at the edges when facing the sun,
+  and are lit from below by the city at night. Coverage: scattered when clear, pale layer
+  in fog, dark deck in rain.
+- It goes through the engine's exposure and tone mapping, so sky and city colours agree.
+- `EnvironmentSettings.applyTo` resets `Scene.skybox`, so the sky is re-attached after
+  every settings change.
+- Low quality uses 3 noise octaves instead of 5. Chrome, Medium: about 37 to 50 FPS.
+- LED crowns are now hollow rings (four strips), not solid glowing roofs.
+- **Build note:** the build hook decides whether to rerun from the names of the files
+  directly inside `assets/`. A *new* `.fmat` in a subfolder needs
+  `rm -rf .dart_tool/hooks_runner/flutter_scene_practice` once; edits to an existing one
+  rebuild normally.

@@ -15,14 +15,23 @@ class LedCrowns {
       material: UnlitMaterial(),
     );
     final rnd = Random(4);
+    // Each crown is a hollow ring: four thin strips along the roof edge of
+    // the tower's oriented footprint, all sharing that tower's colour.
+    const t = 0.7; // strip thickness, metres
     for (final c in crowns) {
-      _mesh.addInstance(
-        vm.Matrix4.compose(
-          c.position + vm.Vector3(0, c.size.y / 2, 0),
-          vm.Quaternion.axisAngle(vm.Vector3(0, 1, 0), c.rotation),
-          c.size,
-        ),
-      );
+      final rot = vm.Quaternion.axisAngle(vm.Vector3(0, 1, 0), c.rotation);
+      final centre = c.position + vm.Vector3(0, c.size.y / 2, 0);
+      final hx = c.size.x / 2, hz = c.size.z / 2;
+      for (final (offset, size) in [
+        (vm.Vector3(0, 0, hz), vm.Vector3(c.size.x, c.size.y, t)),
+        (vm.Vector3(0, 0, -hz), vm.Vector3(c.size.x, c.size.y, t)),
+        (vm.Vector3(hx, 0, 0), vm.Vector3(t, c.size.y, c.size.z)),
+        (vm.Vector3(-hx, 0, 0), vm.Vector3(t, c.size.y, c.size.z)),
+      ]) {
+        _mesh.addInstance(
+          vm.Matrix4.compose(centre + rot.rotated(offset), rot, size),
+        );
+      }
       _phase.add(rnd.nextDouble() * 2 * pi);
       _speed.add(0.25 + rnd.nextDouble() * 0.35);
     }
@@ -59,7 +68,10 @@ class LedCrowns {
       final f = x - x.floor();
       final s = f * f * (3 - 2 * f);
       final c = (a + (b - a) * s) * k;
-      _mesh.setInstanceColor(i, vm.Vector4(c.x, c.y, c.z, 1));
+      final colour = vm.Vector4(c.x, c.y, c.z, 1);
+      for (var e = 0; e < 4; e++) {
+        _mesh.setInstanceColor(i * 4 + e, colour);
+      }
     }
   }
 }

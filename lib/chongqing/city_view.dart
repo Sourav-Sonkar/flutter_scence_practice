@@ -50,6 +50,7 @@ class _CityViewState extends State<CityView> {
   late final CityLook _look;
   late final StreetLamps _lamps;
   CloudTextures? _clouds;
+  PreprocessedSky? _shaderSky;
   late final LedCrowns _crowns;
 
   /// Local clock time in hours (0-24). Starts on a warm afternoon.
@@ -116,6 +117,11 @@ class _CityViewState extends State<CityView> {
       await Scene.initializeStaticResources();
       final city = await CityData.load(widget.district);
       _clouds = await CloudTextures.load();
+      try {
+        _shaderSky = await loadFmatSky('assets/chongqing/sky.fmat');
+      } catch (e) {
+        debugPrint('Shader sky unavailable: $e');
+      }
       _build(city);
       if (mounted) setState(() => _city = city);
     } catch (e, s) {
@@ -261,6 +267,7 @@ class _CityViewState extends State<CityView> {
         _scene.add(n);
       }
     }
+    if (_shaderSky != null) _look.skybox = Skybox(_shaderSky!);
     _applyLook();
   }
 
@@ -278,6 +285,31 @@ class _CityViewState extends State<CityView> {
       foggy: _weather == Weather.fog,
     );
     _look.update(_sky, _hour.value);
+    _pushSkyParams();
+  }
+
+  /// Sends the sky state to the shader sky (assets/chongqing/sky.fmat).
+  void _pushSkyParams() {
+    final p = _shaderSky?.parameters;
+    if (p == null) return;
+    final s = _sky;
+    final sunVisible =
+        ((s.elevation + 3) / 4).clamp(0.0, 1.0) * (1 - 0.92 * s.cloudOvercast);
+    p
+      ..setVec3('zenith', s.zenith)
+      ..setVec3('horizon', s.horizon)
+      ..setVec3('sun_dir', s.sun)
+      ..setVec3('sun_color', s.sunColor)
+      ..setFloat('sun_visible', sunVisible)
+      ..setVec3('moon_dir', s.moon)
+      ..setFloat('night', s.night)
+      ..setFloat('stars', s.stars)
+      ..setVec3('city_glow', s.cityGlow)
+      ..setFloat('coverage', s.cloudCover)
+      ..setFloat('overcast', s.cloudOvercast)
+      ..setVec3('cloud_lit', s.cloudLit)
+      ..setVec3('cloud_shade', s.cloudShade)
+      ..setFloat('detail', _q == Quality.low ? 3 : 5);
   }
 
   /// Projects a sky direction through whichever camera is active.
@@ -312,6 +344,7 @@ class _CityViewState extends State<CityView> {
       night: _sky.night > 0.5,
     );
     _clock.value += dt;
+    _shaderSky?.parameters.setFloat('time', _clock.value);
     if (_playing) _hour.value = (_hour.value + dt / _secondsPerHour) % 24;
     if (_hour.value != _sky.hour) _updateSky();
     _lamps.update(_clock.value, _sky.night);
@@ -413,29 +446,30 @@ class _CityViewState extends State<CityView> {
       fit: StackFit.expand,
       children: [
         // The sky, painted behind the 3D view (which clears transparent).
-        LayoutBuilder(
-          builder: (context, c) {
-            return CustomPaint(
-              size: c.biggest,
-              painter: SkyPainter(
-                state: () => _sky,
-                project: _projectSky,
-                time: () => _clock.value,
-                clouds: () => _clouds,
-                forward: () {
-                  final camera = _mode == _Mode.diorama
-                      ? _orbitCamera.toCamera()
-                      : _rideCamera.toCamera();
-                  return camera.forward;
-                },
-                fovY: () => _mode == _Mode.diorama
-                    ? 45 * vm.degrees2Radians
-                    : 60 * vm.degrees2Radians,
-                repaint: _clock,
-              ),
-            );
-          },
-        ),
+        if (_shaderSky == null)
+          LayoutBuilder(
+            builder: (context, c) {
+              return CustomPaint(
+                size: c.biggest,
+                painter: SkyPainter(
+                  state: () => _sky,
+                  project: _projectSky,
+                  time: () => _clock.value,
+                  clouds: () => _clouds,
+                  forward: () {
+                    final camera = _mode == _Mode.diorama
+                        ? _orbitCamera.toCamera()
+                        : _rideCamera.toCamera();
+                    return camera.forward;
+                  },
+                  fovY: () => _mode == _Mode.diorama
+                      ? 45 * vm.degrees2Radians
+                      : 60 * vm.degrees2Radians,
+                  repaint: _clock,
+                ),
+              );
+            },
+          ),
         if (_mode == _Mode.diorama)
           CameraControls(controller: _orbit, child: view)
         else

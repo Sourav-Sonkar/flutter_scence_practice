@@ -35,6 +35,10 @@ class CityLook {
   final List<Texture2D> homeLights, towerLights;
 
   Weather _weather = Weather.clear;
+
+  /// The shader sky (assets/chongqing/sky.fmat), once loaded. Applying
+  /// EnvironmentSettings clears Scene.skybox, so it is re-attached after.
+  Skybox? skybox;
   int _lightLevel = -1;
   double _lastHour = -1;
   double _gradeSat = -1, _gradeTemp = -1, _emissive = -1;
@@ -82,6 +86,7 @@ class CityLook {
       depthOfFieldMaxBackgroundBlur: 28,
       vignetteEnabled: true,
     );
+    if (skybox != null) scene.skybox = skybox;
     scene.renderScale = switch (quality) {
       Quality.high => 1.0,
       Quality.medium => 0.8,

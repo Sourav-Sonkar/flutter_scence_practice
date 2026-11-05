@@ -82,6 +82,7 @@ class SkyState {
     ]);
     // City light pollution warms the low sky at night.
     final pollution = vm.Vector3(0.075, 0.042, 0.03) * night;
+    cityGlow = pollution;
     horizon = horizon + pollution;
 
     // Sunlight: warm and weak near the horizon, white at height.
@@ -126,8 +127,9 @@ class SkyState {
       night,
     );
     if (raining) {
-      cloudLit = cloudLit * 0.55;
-      cloudShade = cloudShade * 0.45;
+      // Rain clouds are thick and dark, with a little lighter texture.
+      cloudLit = cloudLit * 0.42;
+      cloudShade = cloudShade * 0.26;
     }
 
     if (overcast) {
@@ -148,6 +150,7 @@ class SkyState {
   late final double elevation;
   late final double night;
   late final double golden;
+  late final vm.Vector3 cityGlow;
   late final double cloudCover, cloudOvercast;
   late vm.Vector3 cloudLit, cloudShade;
   late final double stars;
