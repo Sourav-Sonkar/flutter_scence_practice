@@ -33,6 +33,16 @@ Future<void> main(List<String> args) async {
   way["highway"]($bbox);
   way["railway"="monorail"]($bbox);
   way["aerialway"]($bbox);
+  way["landuse"]($bbox);
+  relation["landuse"]["type"="multipolygon"]($bbox);
+  way["leisure"~"park|garden|pitch|playground"]($bbox);
+  relation["leisure"~"park|garden"]["type"="multipolygon"]($bbox);
+  way["natural"~"wood|scrub|grassland|heath|bare_rock|cliff"]($bbox);
+  relation["natural"~"wood|scrub"]["type"="multipolygon"]($bbox);
+  way["amenity"="parking"]($bbox);
+  way["place"="square"]($bbox);
+  node["natural"="tree"]($bbox);
+  way["waterway"="river"]($bbox);
 );
 out geom;
 ''';

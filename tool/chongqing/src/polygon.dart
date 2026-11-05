@@ -84,3 +84,29 @@ bool _inTriangle(P2 p, P2 a, P2 b, P2 c) {
   final pos = d1 > 0 || d2 > 0 || d3 > 0;
   return !(neg && pos);
 }
+
+/// Even-odd point-in-polygon test.
+bool pointInRing(P2 p, List<P2> ring) {
+  var inside = false;
+  for (var i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    final (xi, zi) = ring[i];
+    final (xj, zj) = ring[j];
+    if ((zi > p.$2) != (zj > p.$2) &&
+        p.$1 < (xj - xi) * (p.$2 - zi) / (zj - zi) + xi) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
+/// [ring] scaled by [k] about its vertex centroid.
+List<P2> scaleRing(List<P2> ring, double k) {
+  var cx = 0.0, cz = 0.0;
+  for (final (x, z) in ring) {
+    cx += x;
+    cz += z;
+  }
+  cx /= ring.length;
+  cz /= ring.length;
+  return [for (final (x, z) in ring) (cx + (x - cx) * k, cz + (z - cz) * k)];
+}

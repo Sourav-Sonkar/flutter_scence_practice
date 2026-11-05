@@ -1,3 +1,4 @@
+import 'dart:math' show sqrt;
 import 'dart:typed_data';
 
 /// Accumulates one renderable layer: positions, sRGB vertex colours and
@@ -5,16 +6,39 @@ import 'dart:typed_data';
 /// caller-supplied outward direction, which keeps back-face culling correct
 /// without reasoning about winding at every call site.
 class MeshLayer {
-  MeshLayer(this.name);
+  MeshLayer(this.name, {this.hasUv = false});
+
+  /// Window texture tiling: one texture repeat covers this many metres of
+  /// facade horizontally (8 bays of 3.6 m) and vertically (8 floors of 3.2 m).
+  static const double facadeTileU = 28.8;
+  static const double facadeTileV = 25.6;
+
+  /// A texture coordinate inside the solid pillar column of the window
+  /// texture, used for roofs so they show plain wall colour.
+  static const (double, double) solidUv = (0.004, 0.5);
 
   final String name;
+  final bool hasUv;
+  final List<double> uvs = [];
   final List<double> positions = [];
   final List<int> colors = []; // RGBA bytes, sRGB
   final List<int> indices = [];
 
   int get vertexCount => positions.length ~/ 3;
 
-  int vertex(double x, double y, double z, (int, int, int) rgb) {
+  int vertex(
+    double x,
+    double y,
+    double z,
+    (int, int, int) rgb, [
+    double u = 0,
+    double v = 0,
+  ]) {
+    if (hasUv) {
+      uvs
+        ..add(u)
+        ..add(v);
+    }
     positions
       ..add(x)
       ..add(y)
@@ -94,12 +118,14 @@ class MeshLayer {
     double y1,
     (int, int, int) wall,
     (int, int, int) top,
-    List<int> topTriangles,
-  ) {
-    _walls(ring, y0, y1, wall);
+    List<int> topTriangles, {
+    double? facadeGround,
+  }) {
+    _walls(ring, y0, y1, wall, facadeGround ?? y0);
     final base = vertexCount;
+    final (su, sv) = solidUv;
     for (final (x, z) in ring) {
-      vertex(x, y1, z, top);
+      vertex(x, y1, z, top, su, sv);
     }
     for (var t = 0; t < topTriangles.length; t += 3) {
       triangle(
@@ -126,6 +152,7 @@ class MeshLayer {
     double y0,
     double y1,
     (int, int, int) rgb,
+    double facadeGround,
   ) {
     // Signed area tells which side of each edge is outside.
     var area2 = 0.0;
@@ -135,20 +162,32 @@ class MeshLayer {
       area2 += x0 * z1 - x1 * z0;
     }
     final sign = area2 > 0 ? 1.0 : -1.0;
+    // Facade texture: u runs along the perimeter, v up from the building's
+    // ground, so windows line up floor by floor across stacked parts.
+    final v0 = (y0 - facadeGround) / facadeTileV;
+    final v1 = (y1 - facadeGround) / facadeTileV;
+    var along = 0.0;
     for (var i = 0; i < ring.length; i++) {
       final (x0, z0) = ring[i];
       final (x1, z1) = ring[(i + 1) % ring.length];
       final ex = x1 - x0, ez = z1 - z0;
+      final len = (ex * ex + ez * ez);
+      final u0 = along / facadeTileU;
+      // Snap each wall to whole bays so windows never get sliced.
+      final bays = (len <= 0 ? 0.0 : sqrt(len) / 3.6).roundToDouble();
+      along += bays * 3.6;
+      final u1 = along / facadeTileU;
       final outward = (ez * sign, 0.0, -ex * sign);
-      final a = vertex(x0, y0, z0, rgb);
-      final b = vertex(x1, y0, z1, rgb);
-      final c = vertex(x1, y1, z1, rgb);
-      final d = vertex(x0, y1, z0, rgb);
+      final a = vertex(x0, y0, z0, rgb, u0, -v0);
+      final b = vertex(x1, y0, z1, rgb, u1, -v0);
+      final c = vertex(x1, y1, z1, rgb, u1, -v1);
+      final d = vertex(x0, y1, z0, rgb, u0, -v1);
       quad(a, b, c, d, outward);
     }
   }
 
   Float32List positionsF32() => Float32List.fromList(positions);
+  Float32List uvsF32() => Float32List.fromList(uvs);
   Uint8List colorsU8() => Uint8List.fromList(colors);
   Uint32List indicesU32() => Uint32List.fromList(indices);
 }

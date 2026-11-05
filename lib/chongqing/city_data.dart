@@ -45,9 +45,21 @@ class RidePath {
   }
 }
 
+/// A rooftop item to instance: type name, position, size and Y rotation.
+class Detail {
+  Detail(this.type, this.position, this.size, this.rotation);
+  final String type;
+  final vm.Vector3 position;
+  final vm.Vector3 size;
+  final double rotation;
+}
+
 /// One district built by tool/chongqing/build.dart.
 class CityData {
   CityData._(
+    this.traffic,
+    this.boatLanes,
+    this.details,
     this.title,
     this.attribution,
     this.bounds,
@@ -64,6 +76,9 @@ class CityData {
   final Map<String, MeshGeometry> layers;
   final List<Landmark> landmarks;
   final List<RidePath> rides;
+  final List<Detail> details;
+  final List<RidePath> traffic; // drivable road centre lines
+  final List<RidePath> boatLanes;
 
   vm.Vector2 get center => bounds.center;
 
@@ -88,6 +103,9 @@ class CityData {
       }
       layers[l['name'] as String] = MeshGeometry.fromArrays(
         positions: bytes.buffer.asFloat32List(l['positions'] as int, n * 3),
+        texCoords: l['uvs'] == null
+            ? null
+            : bytes.buffer.asFloat32List(l['uvs'] as int, n * 2),
         colors: colors,
         indices: bytes.buffer.asUint32List(
           l['indices'] as int,
@@ -102,7 +120,33 @@ class CityData {
       (p[1] as num).toDouble(),
       (p[2] as num).toDouble(),
     );
+    final types = (meta['detailTypes'] as List? ?? const []).cast<String>();
+    final dm = meta['details'] as Map<String, dynamic>?;
+    final details = <Detail>[];
+    if (dm != null) {
+      final f = bytes.buffer.asFloat32List(
+        dm['offset'] as int,
+        (dm['count'] as int) * 8,
+      );
+      for (var k = 0; k < f.length; k += 8) {
+        details.add(
+          Detail(
+            types[f[k].round()],
+            vm.Vector3(f[k + 1], f[k + 2], f[k + 3]),
+            vm.Vector3(f[k + 4], f[k + 5], f[k + 6]),
+            f[k + 7],
+          ),
+        );
+      }
+    }
+    List<RidePath> paths(String key, String kind) => [
+      for (final line in (meta[key] as List? ?? const []))
+        RidePath(kind, kind, [for (final p in line as List) v3(p as List)]),
+    ];
     return CityData._(
+      paths('traffic', 'road'),
+      paths('boatLanes', 'river'),
+      details,
       meta['title'] as String,
       meta['attribution'] as String,
       vm.Aabb2.minMax(

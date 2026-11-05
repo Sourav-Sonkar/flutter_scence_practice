@@ -7,6 +7,9 @@ import 'package:flutter_scene/scene.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
 import 'city_data.dart';
+import 'detail_chunks.dart';
+import 'facade_textures.dart';
+import 'movers.dart';
 
 enum _Mode { diorama, ride }
 
@@ -37,6 +40,8 @@ class _CityViewState extends State<CityView> {
   double _rideYaw = 0, _ridePitch = -0.15;
 
   final List<Node> _cabins = [];
+  late final DetailChunks _details;
+  late final Movers _movers;
   RidePath? _ride;
   double _rideS = 0;
   double _rideDir = 1;
@@ -88,18 +93,28 @@ class _CityViewState extends State<CityView> {
         ..roughnessFactor = roughness;
 
   void _build(CityData city) {
-    const roughness = {
-      'terrain': 0.95,
-      'buildings': 0.7,
-      'roads': 0.9,
-      'structures': 0.6,
+    final materials = <String, Material>{
+      'terrain': _pbr(0.95),
+      'buildings': _pbr(0.75)..baseColorTexture = FacadeTextures.residential(),
+      // Glass towers: smoother so they pick up the sky.
+      'towers': _pbr(0.4)
+        ..metallicFactor = 0.1
+        ..baseColorTexture = FacadeTextures.glass(),
+      'roads': _pbr(0.9),
+      'structures': _pbr(0.6),
     };
     city.layers.forEach((name, geometry) {
       _scene.add(
-        Node(name: name, mesh: Mesh(geometry, _pbr(roughness[name] ?? 0.8)))
+        Node(name: name, mesh: Mesh(geometry, materials[name] ?? _pbr(0.8)))
           ..frustumCulled = false,
       );
     });
+
+    // Rooftop items, grouped into map tiles that only show up close.
+    _details = DetailChunks(city.details);
+    _scene.add(_details.root);
+    _movers = Movers(city);
+    _scene.add(_movers.root);
 
     // River surface, a little larger than the district so edges stay wet.
     final size = city.bounds.max - city.bounds.min;
@@ -108,7 +123,7 @@ class _CityViewState extends State<CityView> {
           name: 'water',
           mesh: Mesh(
             PlaneGeometry(width: size.x + 400, depth: size.y + 400),
-            _pbr(0.08, vm.Vector4(0.13, 0.17, 0.15, 1)),
+            _pbr(0.06, vm.Vector4(0.12, 0.18, 0.19, 1)),
           ),
         )
         ..position = vm.Vector3(
@@ -125,10 +140,11 @@ class _CityViewState extends State<CityView> {
     );
     _orbit = OrbitCameraController(
       target: vm.Vector3(city.center.x, city.riverLevel + 40, city.center.y),
-      distance: 1700,
+      distance: 1150,
       // From the south-east, looking up the peninsula from the confluence.
+      // A high angle is what makes tilt-shift photos read as models.
       azimuth: -2.4,
-      polar: 0.6,
+      polar: 0.72,
       minDistance: 120,
       maxDistance: 3200,
       minPolar: 0.12,
@@ -166,12 +182,15 @@ class _CityViewState extends State<CityView> {
     _applyQuality();
   }
 
+  // Late-afternoon sun from the south-west: warm light, long shadows.
+  static final vm.Vector3 _sunDir = vm.Vector3(0.62, -0.5, 0.6)..normalize();
+
   void _applyQuality() {
     final high = _highQuality;
     _scene.directionalLight = DirectionalLight(
-      direction: vm.Vector3(0.55, -0.75, 0.35),
-      color: vm.Vector3(1.0, 0.94, 0.84),
-      intensity: 3.4,
+      direction: _sunDir,
+      color: vm.Vector3(1.0, 0.9, 0.76),
+      intensity: 4.2,
       castsShadow: true,
       shadowMaxDistance: high ? 3000 : 1800,
       shadowCascadeCount: high ? 4 : 2,
@@ -179,27 +198,47 @@ class _CityViewState extends State<CityView> {
       shadowDepthBias: 0.4,
       shadowNormalBias: 0.6,
     );
+    _scene.skybox ??= Skybox(
+      GradientSkySource(
+        zenithColor: vm.Vector3(0.16, 0.38, 0.78),
+        horizonColor: vm.Vector3(0.78, 0.86, 0.95),
+        groundColor: vm.Vector3(0.5, 0.52, 0.5),
+        sunDirection: -_sunDir,
+        sunColor: vm.Vector3(4, 3.4, 2.6),
+      ),
+    );
     _scene.environmentSettings = EnvironmentSettings(
       toneMapping: ToneMappingMode.aces,
-      exposure: 1.0,
-      environmentIntensity: 0.6,
-      // Chongqing is the fog city: a soft blue-grey haze with distance.
+      exposure: 1.05,
+      environmentIntensity: 0.75,
+      // A painted-model grade: richer colour, a touch warm and contrasty.
+      colorGradingEnabled: true,
+      saturation: 1.35,
+      contrast: 1.1,
+      temperature: 0.06,
+      // Light blue haze only far away; heavy fog kills the miniature look.
       fogEnabled: true,
       fogMode: FogMode.exponential,
-      fogColor: vm.Vector3(0.72, 0.76, 0.80),
-      fogDensity: 0.00011,
+      fogColor: vm.Vector3(0.74, 0.83, 0.94),
+      fogDensity: 0.00005,
       ambientOcclusionEnabled: high,
       ambientOcclusionMethod: AmbientOcclusionMethod.groundTruth,
-      ambientOcclusionRadius: 8,
-      ambientOcclusionIntensity: 1.0,
+      ambientOcclusionRadius: 6,
+      ambientOcclusionIntensity: 1.2,
       screenSpaceReflectionsEnabled: high,
       screenSpaceReflectionsMaxDistance: 600,
-      // Tilt-shift: a shallow focus band makes the real city read as a model.
+      bloomEnabled: high,
+      bloomThreshold: 2.2,
+      bloomIntensity: 0.12,
+      // Tilt-shift: a narrow focus band at the orbit target, strong blur
+      // above and below it, makes the real city read as a model.
       depthOfFieldEnabled: high,
-      depthOfFieldFStop: 1.4,
-      depthOfFieldBlurScale: 18,
+      depthOfFieldFStop: 0.7,
+      depthOfFieldBlurScale: 40,
+      depthOfFieldMaxForegroundBlur: 28,
+      depthOfFieldMaxBackgroundBlur: 28,
       vignetteEnabled: true,
-      vignetteIntensity: 0.25,
+      vignetteIntensity: 0.3,
     );
     _scene.renderScale = high ? 1.0 : 0.75;
     _scene.antiAliasingMode = high
@@ -221,6 +260,12 @@ class _CityViewState extends State<CityView> {
     if (cx != t.x || cz != t.z) _orbit.target = vm.Vector3(cx, t.y, cz);
 
     _advanceRide(dt);
+    _movers.update(dt, showCars: _mode == _Mode.ride || _orbit.distance < 900);
+    _details.update(
+      _mode == _Mode.diorama
+          ? _orbitNode.globalTransform.getTranslation()
+          : _rideNode.globalTransform.getTranslation(),
+    );
     if (_mode == _Mode.diorama) {
       _scene.depthOfField.focusDistance = _orbit.distance;
     } else {

@@ -88,6 +88,8 @@ void main(List<String> args) {
     final col = bytes.length;
     bytes.add(l.colorsU8());
     pad();
+    final uv = bytes.length;
+    if (l.hasUv) bytes.add(l.uvsF32().buffer.asUint8List());
     final idx = bytes.length;
     bytes.add(l.indicesU32().buffer.asUint8List());
     layers.add({
@@ -96,9 +98,26 @@ void main(List<String> args) {
       'indexCount': l.indices.length,
       'positions': pos,
       'colors': col,
+      if (l.hasUv) 'uvs': uv,
       'indices': idx,
     });
   }
+  pad();
+  final detailsOffset = bytes.length;
+  bytes.add(
+    Float32List.fromList([
+      for (final d in city.details) ...[
+        d.type.index.toDouble(),
+        d.x,
+        d.y,
+        d.z,
+        d.sx,
+        d.sy,
+        d.sz,
+        d.rot,
+      ],
+    ]).buffer.asUint8List(),
+  );
   File('${out.path}/$name.bin').writeAsBytesSync(bytes.takeBytes());
 
   final meta = {
@@ -122,6 +141,22 @@ void main(List<String> args) {
         },
     ],
     'landmarks': city.landmarks,
+    'detailTypes': [for (final t in DetailType.values) t.name],
+    // Rooftop items and plants live in the .bin as 8 floats each:
+    // type, x, y, z, sx, sy, sz, rotation.
+    'details': {'offset': detailsOffset, 'count': city.details.length},
+    'traffic': [
+      for (final line in city.traffic)
+        [
+          for (final (x, y, z) in line) [_r1(x), _r1(y), _r1(z)],
+        ],
+    ],
+    'boatLanes': [
+      for (final line in city.boatLanes)
+        [
+          for (final (x, y, z) in line) [_r1(x), _r1(y), _r1(z)],
+        ],
+    ],
     'stats': city.stats,
   };
   File('${out.path}/$name.json')
@@ -149,6 +184,7 @@ void main(List<String> args) {
 }
 
 double _r(double v) => (v * 100).roundToDouble() / 100;
+double _r1(double v) => (v * 10).roundToDouble() / 10;
 
 /// Elevation from cached Terrarium tiles: metres = R*256 + G + B/256 - 32768.
 class _TerrariumMosaic {

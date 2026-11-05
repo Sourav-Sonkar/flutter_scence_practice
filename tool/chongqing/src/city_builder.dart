@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import 'geo.dart';
+import 'greenery.dart';
 import 'mesh_layer.dart';
 import 'polygon.dart';
 import '../landmarks.dart';
@@ -12,10 +13,50 @@ typedef V3 = (double, double, double);
 /// A path the camera can ride along, in local metres.
 typedef Ride = ({String name, String kind, List<V3> points});
 
+/// Small rooftop items placed by instancing at runtime (shown only when the
+/// camera is close). Rotation is about +Y in radians.
+enum DetailType {
+  waterTank,
+  acUnit,
+  stairHut,
+  plant,
+  helipad,
+  mast,
+  // Vegetation, after Chongqing's common urban plants.
+  treeHuangge, // Ficus virens, the city tree: wide, low, dark canopy
+  treeCamphor, // Cinnamomum camphora: round, dense, mid green
+  treeBanyan, // Ficus microcarpa: broad, glossy, dark
+  treeGinkgo, // narrow, light yellow-green
+  shrub,
+  bougainvillea, // magenta, planted along Yuzhong's bridges and roadsides
+}
+
+typedef Detail = ({
+  DetailType type,
+  double x,
+  double y,
+  double z,
+  double sx,
+  double sy,
+  double sz,
+  double rot,
+});
+
 class CityBuild {
-  CityBuild(this.layers, this.rides, this.landmarks, this.stats);
+  CityBuild(
+    this.layers,
+    this.rides,
+    this.landmarks,
+    this.stats,
+    this.details,
+    this.traffic,
+    this.boatLanes,
+  );
+  final List<List<V3>> traffic; // drivable road centre lines, for cars
+  final List<List<V3>> boatLanes; // lanes on the rivers, for boats
   final List<MeshLayer> layers;
   final List<Ride> rides;
+  final List<Detail> details;
   final List<Map<String, Object>> landmarks;
   final Map<String, int> stats;
 }
@@ -80,7 +121,7 @@ double _hash01(int id) {
 /// Road half-widths (m) and colours by highway class; null means skip.
 (double, Rgb, double)? roadStyle(Map<String, dynamic> tags) {
   final hw = '${tags['highway']}';
-  const asphalt = (54, 56, 62);
+  const asphalt = (74, 76, 84);
   const paving = (168, 160, 148);
   const stairs = (128, 112, 98);
   return switch (hw) {
@@ -127,7 +168,10 @@ class CityBuilder {
   void _count(String k) => stats[k] = (stats[k] ?? 0) + 1;
 
   bool _inside(double x, double z) =>
-      x >= terrain.minX && x <= terrain.maxX && z >= terrain.minZ && z <= terrain.maxZ;
+      x >= terrain.minX &&
+      x <= terrain.maxX &&
+      z >= terrain.minZ &&
+      z <= terrain.maxZ;
 
   /// Splits a resampled line into the runs that lie inside the district.
   List<List<int>> _insideRuns(List<P2> pts) {
@@ -145,9 +189,23 @@ class CityBuilder {
     return runs;
   }
 
+  final List<List<P2>> _buildingRings = [];
+  final List<
+    ({
+      List<P2> pts,
+      List<double> heights,
+      double half,
+      bool bridge,
+      String kind,
+    })
+  >
+  _roadRuns = [];
+
   CityBuild build(List<Map<String, dynamic>> elements) {
-    final ground = _terrainLayer();
-    final buildings = MeshLayer('buildings');
+    final covers = <(Cover, List<P2>)>[];
+    final rivers = <List<P2>>[];
+    final homes = MeshLayer('buildings', hasUv: true);
+    final towers = MeshLayer('towers', hasUv: true);
     final roads = MeshLayer('roads');
     final structures = MeshLayer('structures'); // bridges, piers, rail, cable
     final landmarks = <Map<String, Object>>[];
@@ -159,7 +217,7 @@ class CityBuilder {
       final id = (e['id'] as num).toInt();
       if (tags.containsKey('building')) {
         for (final ring in _rings(e)) {
-          final lm = _building(buildings, ring, tags, id);
+          final lm = _building(homes, towers, ring, tags, id);
           if (lm != null) landmarks.add(lm);
         }
       } else if (tags.containsKey('highway') && e['type'] == 'way') {
@@ -171,6 +229,13 @@ class CityBuilder {
         }
         final track = _monorail(structures, _line(e));
         if (track.length > 1) monorail.add(track);
+      } else if (coverFor(tags) case final cover?
+          when !tags.containsKey('building')) {
+        for (final ring in _rings(e)) {
+          if (ring.length >= 3) covers.add((cover, ring));
+        }
+      } else if (tags['waterway'] == 'river' && e['type'] == 'way') {
+        rivers.add(_line(e));
       } else if (tags['aerialway'] == 'cable_car' && e['type'] == 'way') {
         final path = _cableway(structures, _line(e));
         if (path.isNotEmpty && !rides.any((r) => r.kind == 'cableway')) {
@@ -190,27 +255,55 @@ class CityBuilder {
         points: runs.first,
       ));
     }
+    // Masks keep trees off buildings and roads.
+    final built = Mask(terrain);
+    for (final r in _buildingRings) {
+      built.markRing(r);
+    }
+    final paved = Mask(terrain);
+    for (final r in _roadRuns) {
+      for (final (x, z) in r.pts) {
+        paved.markDisc(x, z, r.half + 1);
+      }
+    }
+    final ground = _terrainLayer(covers);
+    _vegetation(covers, built, paved);
     return CityBuild(
-      [ground, buildings, roads, structures],
+      [ground, homes, towers, roads, structures],
       rides,
       landmarks.take(12).toList(),
       stats,
+      _details,
+      _trafficLines(),
+      _boatLanes(rivers),
     );
   }
 
   // ---- terrain ----
 
-  MeshLayer _terrainLayer() {
+  MeshLayer _terrainLayer(List<(Cover, List<P2>)> covers) {
     final layer = MeshLayer('terrain');
     for (var j = 0; j < terrain.rows; j++) {
       for (var i = 0; i < terrain.cols; i++) {
         final h = terrain.vertex(i, j);
-        layer.vertex(
-          terrain.minX + i * terrain.spacing,
-          h,
-          terrain.minZ + j * terrain.spacing,
-          _groundColor(h),
-        );
+        final x = terrain.minX + i * terrain.spacing;
+        final z = terrain.minZ + j * terrain.spacing;
+        var color = _groundColor(h);
+        if (h - riverLevel >= 8) {
+          // Green on steep unbuilt slopes, the way Chongqing's cliffs look.
+          final slope = _slope(x, z);
+          if (slope > 0.3) {
+            final t = ((slope - 0.3) / 0.4).clamp(0.0, 1.0);
+            color = _mix(color, (82, 128, 62), t);
+          }
+          for (final (cover, ring) in covers) {
+            if (pointInRing((x, z), ring)) {
+              color = coverColor(cover);
+              break;
+            }
+          }
+        }
+        layer.vertex(x, h, z, color);
       }
     }
     for (var j = 0; j < terrain.rows - 1; j++) {
@@ -223,6 +316,231 @@ class CityBuilder {
       }
     }
     return layer;
+  }
+
+  double _slope(double x, double z) {
+    const d = 6.0;
+    final gx =
+        (terrain.heightAt(x + d, z) - terrain.heightAt(x - d, z)) / (2 * d);
+    final gz =
+        (terrain.heightAt(x, z + d) - terrain.heightAt(x, z - d)) / (2 * d);
+    return sqrt(gx * gx + gz * gz);
+  }
+
+  static Rgb _mix(Rgb a, Rgb b, double t) => (
+    (a.$1 + (b.$1 - a.$1) * t).round(),
+    (a.$2 + (b.$2 - a.$2) * t).round(),
+    (a.$3 + (b.$3 - a.$3) * t).round(),
+  );
+
+  // ---- vegetation, traffic, boats ----
+
+  void _addPlant(
+    DetailType type,
+    double x,
+    double y,
+    double z,
+    double height,
+    double width,
+    Rng rng,
+  ) {
+    _details.add((
+      type: type,
+      x: x,
+      y: y,
+      z: z,
+      sx: width,
+      sy: height,
+      sz: width * (0.85 + rng.next() * 0.3),
+      rot: rng.next() * pi,
+    ));
+    _count('plants ${type.name}');
+  }
+
+  void _tree(double x, double z, Rng rng, {bool park = false, double? y}) {
+    final r = rng.next();
+    final ground = y ?? terrain.heightAt(x, z);
+    if (park && r < 0.12) {
+      _addPlant(
+        DetailType.shrub,
+        x,
+        ground,
+        z,
+        1.6 + rng.next(),
+        2.4 + rng.next(),
+        rng,
+      );
+    } else if (r < 0.4) {
+      _addPlant(
+        DetailType.treeHuangge,
+        x,
+        ground,
+        z,
+        10 + rng.next() * 6,
+        10 + rng.next() * 5,
+        rng,
+      );
+    } else if (r < 0.7) {
+      _addPlant(
+        DetailType.treeCamphor,
+        x,
+        ground,
+        z,
+        9 + rng.next() * 5,
+        7 + rng.next() * 3,
+        rng,
+      );
+    } else if (r < 0.85) {
+      _addPlant(
+        DetailType.treeBanyan,
+        x,
+        ground,
+        z,
+        8 + rng.next() * 4,
+        9 + rng.next() * 3,
+        rng,
+      );
+    } else {
+      _addPlant(
+        DetailType.treeGinkgo,
+        x,
+        ground,
+        z,
+        10 + rng.next() * 5,
+        4 + rng.next() * 2,
+        rng,
+      );
+    }
+  }
+
+  void _vegetation(List<(Cover, List<P2>)> covers, Mask built, Mask paved) {
+    final rng = Rng(20261105);
+    // Scatter on a jittered lattice: parks and woods densely, steep unbuilt
+    // slopes fairly densely, other open ground sparsely.
+    const step = 9.0;
+    for (var z = terrain.minZ + step / 2; z < terrain.maxZ; z += step) {
+      for (var x = terrain.minX + step / 2; x < terrain.maxX; x += step) {
+        final px = x + (rng.next() - 0.5) * step * 0.8;
+        final pz = z + (rng.next() - 0.5) * step * 0.8;
+        final h = terrain.heightAt(px, pz);
+        if (h - riverLevel < 6 || built.at(px, pz) || paved.at(px, pz)) {
+          continue;
+        }
+        Cover? cover;
+        for (final (c, ring) in covers) {
+          if (pointInRing((px, pz), ring)) {
+            cover = c;
+            break;
+          }
+        }
+        final green =
+            cover == Cover.park || cover == Cover.wood || cover == Cover.grass;
+        final p = switch (cover) {
+          Cover.wood => 0.85,
+          Cover.park => 0.6,
+          Cover.grass => 0.15,
+          Cover.paved || Cover.construction => 0.0,
+          _ => _slope(px, pz) > 0.35 ? 0.7 : 0.08,
+        };
+        if (rng.next() < p) _tree(px, pz, rng, park: green);
+      }
+    }
+    // Street trees along main roads, and bougainvillea along bridge edges.
+    for (final r in _roadRuns) {
+      final major = const {
+        'primary',
+        'secondary',
+        'tertiary',
+        'trunk',
+      }.contains(r.kind);
+      if (!major && !r.bridge) continue;
+      final every = r.bridge ? 2 : 3; // samples are 4 m apart
+      for (var k = 1; k < r.pts.length - 1; k += every) {
+        var dx = r.pts[k + 1].$1 - r.pts[k - 1].$1,
+            dz = r.pts[k + 1].$2 - r.pts[k - 1].$2;
+        final len = sqrt(dx * dx + dz * dz);
+        if (len < 1e-6) continue;
+        dx /= len;
+        dz /= len;
+        for (final side in [-1.0, 1.0]) {
+          if (r.bridge) {
+            final off = r.half - 0.6;
+            final x = r.pts[k].$1 - dz * off * side,
+                z = r.pts[k].$2 + dx * off * side;
+            _addPlant(
+              DetailType.bougainvillea,
+              x,
+              r.heights[k],
+              z,
+              1.1,
+              1.6,
+              rng,
+            );
+          } else if (k % 3 == 1) {
+            final off = r.half + 2.5;
+            final x = r.pts[k].$1 - dz * off * side,
+                z = r.pts[k].$2 + dx * off * side;
+            if (!_inside(x, z) || built.at(x, z) || paved.at(x, z)) continue;
+            if (rng.next() < 0.75) _tree(x, z, rng);
+          }
+        }
+      }
+    }
+  }
+
+  List<List<V3>> _trafficLines() => [
+    for (final r in _roadRuns)
+      if (const {
+            'primary',
+            'secondary',
+            'tertiary',
+            'trunk',
+            'motorway',
+            'primary_link',
+            'secondary_link',
+            'tertiary_link',
+            'trunk_link',
+          }.contains(r.kind) &&
+          r.pts.length > 4)
+        [
+          for (var k = 0; k < r.pts.length; k += 3)
+            (r.pts[k].$1, r.heights[k], r.pts[k].$2),
+        ],
+  ];
+
+  /// Lanes on the water alongside each river's centre line, kept only where
+  /// the whole lane is over water.
+  List<List<V3>> _boatLanes(List<List<P2>> rivers) {
+    final lanes = <List<V3>>[];
+    for (final river in rivers) {
+      final pts = _resample(river, 25);
+      for (final off in [-110.0, -45.0, 45.0, 110.0]) {
+        List<V3>? cur;
+        void flush() {
+          if (cur != null && cur!.length > 12) lanes.add(cur!);
+          cur = null;
+        }
+
+        for (var k = 1; k < pts.length - 1; k++) {
+          var dx = pts[k + 1].$1 - pts[k - 1].$1,
+              dz = pts[k + 1].$2 - pts[k - 1].$2;
+          final len = sqrt(dx * dx + dz * dz);
+          dx /= len;
+          dz /= len;
+          final x = pts[k].$1 - dz * off, z = pts[k].$2 + dx * off;
+          final wet = _inside(x, z) && terrain.heightAt(x, z) < riverLevel - 1;
+          if (wet) {
+            (cur ??= []).add((x, riverLevel + 0.6, z));
+          } else {
+            flush();
+          }
+        }
+        flush();
+      }
+    }
+    _count('boat lanes');
+    stats['boat lanes'] = lanes.length;
+    return lanes;
   }
 
   Rgb _groundColor(double h) {
@@ -266,8 +584,11 @@ class CityBuilder {
       proj.toLocal((p['lat'] as num).toDouble(), (p['lon'] as num).toDouble()),
   ];
 
+  final List<Detail> _details = [];
+
   Map<String, Object>? _building(
-    MeshLayer out,
+    MeshLayer homes,
+    MeshLayer towers,
     List<P2> ring,
     Map<String, dynamic> tags,
     int id,
@@ -296,8 +617,62 @@ class CityBuilder {
     base = max(base, riverLevel) - 0.5;
     final top = base + 0.5 + height;
 
-    final (wall, roof) = _buildingColors(tags, hash, height);
-    out.prism(ring, base, top, wall, roof, triangulate(ring));
+    final glass = _isGlass(tags, height);
+    final out = glass ? towers : homes;
+    final (wall, roof) = _buildingColors(glass, hash);
+
+    // Big, tall buildings get a podium with a slimmer tower on top, the
+    // usual Chongqing shape. The tower is the footprint shrunk about its
+    // centre, used only if it stays inside the footprint.
+    var roofRing = ring;
+    if (area > 1200 && height > 50) {
+      final tower = scaleRing(ring, 0.68);
+      if (tower.every((p) => pointInRing(p, ring))) {
+        final podiumTop = base + 0.5 + min(18.0, height * 0.22);
+        out.prism(
+          ring,
+          base,
+          podiumTop,
+          wall,
+          roof,
+          triangulate(ring),
+          facadeGround: base + 0.5,
+        );
+        out.prism(
+          tower,
+          podiumTop,
+          top,
+          wall,
+          roof,
+          triangulate(tower),
+          facadeGround: base + 0.5,
+        );
+        roofRing = tower;
+        _count('podium + tower buildings');
+      } else {
+        out.prism(
+          ring,
+          base,
+          top,
+          wall,
+          roof,
+          triangulate(ring),
+          facadeGround: base + 0.5,
+        );
+      }
+    } else {
+      out.prism(
+        ring,
+        base,
+        top,
+        wall,
+        roof,
+        triangulate(ring),
+        facadeGround: base + 0.5,
+      );
+    }
+    _rooftop(roofRing, top, glass, height, hash, id);
+    _buildingRings.add(ring);
 
     final name = tags['name:en'] ?? tags['name'];
     if (name == null || height < 60) return null;
@@ -311,32 +686,146 @@ class CityBuilder {
     };
   }
 
-  (Rgb, Rgb) _buildingColors(Map<String, dynamic> tags, double hash, double h) {
-    final type = '${tags['building']}';
-    final glass =
-        h > 90 ||
-        const {'commercial', 'office', 'hotel', 'retail'}.contains(type);
+  bool _isGlass(Map<String, dynamic> tags, double h) =>
+      h > 90 ||
+      const {
+        'commercial',
+        'office',
+        'hotel',
+        'retail',
+      }.contains('${tags['building']}');
+
+  /// Wall and roof colours. Brighter and warmer than real life on purpose:
+  /// a painted-model palette is a big part of the miniature look.
+  (Rgb, Rgb) _buildingColors(bool glass, double hash) {
     final palette = glass
         ? const [
-            (150, 170, 186),
-            (126, 148, 166),
-            (176, 186, 192),
-            (110, 128, 140),
+            (120, 168, 196), // blue glass
+            (150, 186, 200), // pale teal
+            (196, 204, 210), // silver
+            (98, 132, 160), // deep blue
+            (206, 192, 160), // champagne
           ]
         : const [
-            (214, 204, 186),
-            (196, 186, 170),
-            (226, 220, 208),
-            (184, 170, 156),
-            (200, 196, 190),
+            (240, 228, 204), // cream
+            (236, 200, 170), // peach
+            (214, 160, 128), // terracotta
+            (240, 232, 190), // pale yellow
+            (232, 234, 236), // white tile
+            (198, 200, 196), // grey tile
           ];
-    final base = palette[(hash * palette.length).floor() % palette.length];
-    final roof = (
-      (base.$1 * 0.78).round(),
-      (base.$2 * 0.78).round(),
-      (base.$3 * 0.78).round(),
-    );
+    final base = palette[(hash * 997).floor() % palette.length];
+    final roof = glass
+        ? (92, 98, 104)
+        : const [
+            (168, 160, 150),
+            (150, 156, 160),
+            (176, 120, 96),
+          ][(hash * 31).floor() % 3];
     return (base, roof);
+  }
+
+  /// Scatters rooftop items inside [ring] at height [y].
+  void _rooftop(
+    List<P2> ring,
+    double y,
+    bool glass,
+    double height,
+    double hash,
+    int id,
+  ) {
+    var seed = id * 2654435761 & 0x7fffffff;
+    double rnd() {
+      seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+      return seed / 0x7fffffff;
+    }
+
+    var minX = double.infinity, maxX = -double.infinity;
+    var minZ = double.infinity, maxZ = -double.infinity;
+    for (final (x, z) in ring) {
+      minX = min(minX, x);
+      maxX = max(maxX, x);
+      minZ = min(minZ, z);
+      maxZ = max(maxZ, z);
+    }
+    final area = signedArea2(ring).abs() / 2;
+    if (area < 40) return;
+
+    bool place(
+      DetailType type,
+      double sx,
+      double sy,
+      double sz, {
+      bool centre = false,
+    }) {
+      for (var attempt = 0; attempt < 12; attempt++) {
+        final x = centre ? (minX + maxX) / 2 : minX + rnd() * (maxX - minX);
+        final z = centre ? (minZ + maxZ) / 2 : minZ + rnd() * (maxZ - minZ);
+        final r = max(sx, sz) * 0.75;
+        if (!pointInRing((x, z), ring) ||
+            !pointInRing((x + r, z), ring) ||
+            !pointInRing((x - r, z), ring) ||
+            !pointInRing((x, z + r), ring) ||
+            !pointInRing((x, z - r), ring)) {
+          if (centre) return false;
+          continue;
+        }
+        _details.add((
+          type: type,
+          x: x,
+          y: y,
+          z: z,
+          sx: sx,
+          sy: sy,
+          sz: sz,
+          rot: rnd() * pi,
+        ));
+        _count('rooftop ${type.name}');
+        return true;
+      }
+      return false;
+    }
+
+    if (glass) {
+      if (height > 180 && area > 500) {
+        final r = min(11.0, sqrt(area) / 4);
+        if (!place(DetailType.helipad, r * 2, 0.4, r * 2, centre: true)) {
+          place(
+            DetailType.stairHut,
+            sqrt(area) * 0.35,
+            5,
+            sqrt(area) * 0.35,
+            centre: true,
+          );
+        }
+      } else {
+        place(
+          DetailType.stairHut,
+          sqrt(area) * 0.35,
+          4.5,
+          sqrt(area) * 0.3,
+          centre: true,
+        );
+      }
+      if (height > 200) place(DetailType.mast, 1.2, 18 + hash * 20, 1.2);
+      for (var k = 0; k < 2 + (hash * 3).floor(); k++) {
+        place(DetailType.acUnit, 2.4, 1.6, 1.6);
+      }
+    } else {
+      if (area > 150) place(DetailType.stairHut, 3.2, 3, 3.2);
+      for (var k = 0; k < 1 + (hash * 2).floor(); k++) {
+        place(DetailType.waterTank, 2.6, 3, 2.6);
+      }
+      for (var k = 0; k < 2 + (hash * 4).floor(); k++) {
+        place(DetailType.acUnit, 1.4, 1.0, 0.9);
+      }
+      // Chongqing rooftops are often gardens.
+      if (hash > 0.55) {
+        for (var k = 0; k < 2 + (hash * 4).floor(); k++) {
+          place(DetailType.plant, 1.6, 1.6, 1.6);
+        }
+      }
+    }
   }
 
   // ---- roads and bridges ----
@@ -395,8 +884,16 @@ class CityBuilder {
       }
     }
     for (final run in _insideRuns(pts)) {
-      _ribbon(roads, [for (final k in run) pts[k]], [for (final k in run) heights[k]],
-          half, color);
+      final runPts = [for (final k in run) pts[k]];
+      final runHeights = [for (final k in run) heights[k]];
+      _ribbon(roads, runPts, runHeights, half, color);
+      _roadRuns.add((
+        pts: runPts,
+        heights: runHeights,
+        half: half,
+        bridge: _elevated(tags),
+        kind: '${tags['highway']}',
+      ));
     }
   }
 
