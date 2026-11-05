@@ -127,3 +127,30 @@ Asset size: 3.7 MB. Runs at 60 FPS on the iOS simulator on High.
   because the elevation data is noisy over water.
 - Geometry is clipped to the district box; 12 buildings and parts of long roads outside
   it are dropped.
+
+## Second round (2026-11-05): making it feel alive
+
+- **Windows**: generated textures (residential punched windows, glass curtain walls) with
+  matching night-light textures.
+- **Miniature look**: painted-model colour grade, gradient sky, warm low sun, tilt-shift
+  depth of field, high camera angle.
+- **Shapes and rooftops**: podium + tower for big buildings; water tanks, AC units, stair
+  huts, rooftop gardens, helipads and masts.
+- **Greenery**: OSM land cover, green steep slopes, and Chongqing's common trees: huangge
+  (*Ficus virens*, the city tree), camphor, Chinese banyan, ginkgo, plus bougainvillea along
+  bridges. OSM has almost no mapped trees here, so most are placed by rules.
+- **Life**: moving cars (a quarter are yellow taxis) and river boats.
+- **Time and weather**: Day / Sunset / Night and Clear / Fog / Rain. Night lights windows,
+  street lamps and bridges with bloom.
+- **Detail by distance**: rooftop clutter shows within 650 m of the camera, trees within
+  2.4 km (1.3 km on Low), cars only when zoomed in.
+- **Web first**: three presets. Laptops in a browser start on Medium (about 52 FPS by day in
+  Chrome on an M5 MacBook, about 33 FPS at night), native iOS/macOS on High, phones on Low.
+  The web renderer does not draw the procedural skybox, so a Flutter gradient behind the
+  3D view provides the sky. A WebAssembly build was slower (single-threaded without
+  cross-origin isolation, which GitHub Pages cannot provide), so the JS build is used.
+
+## Next
+- **District 2, Jialing riverside** (lat 29.548–29.572, lon 106.515–106.570): People's
+  Square and the Great Hall, Liziba, and the elevated Line 2 monorail ride. Needs the app
+  to load several districts side by side.

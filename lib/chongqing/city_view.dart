@@ -7,9 +7,11 @@ import 'package:flutter_scene/scene.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
 import 'city_data.dart';
+import 'city_look.dart';
 import 'detail_chunks.dart';
 import 'facade_textures.dart';
 import 'movers.dart';
+import 'street_lamps.dart';
 
 enum _Mode { diorama, ride }
 
@@ -40,17 +42,23 @@ class _CityViewState extends State<CityView> {
   double _rideYaw = 0, _ridePitch = -0.15;
 
   final List<Node> _cabins = [];
-  late final DetailChunks _details;
+  late final DetailChunks _rooftops;
+  late final DetailChunks _vegetation;
+  late final CityLook _look;
+  TimeOfDayMode _time = TimeOfDayMode.day;
+  Weather _weather = Weather.clear;
+  final ValueNotifier<double> _clock = ValueNotifier(0);
   late final Movers _movers;
   RidePath? _ride;
   double _rideS = 0;
   double _rideDir = 1;
 
   _Mode _mode = _Mode.diorama;
-  bool _highQuality =
-      !kIsWeb &&
-      (defaultTargetPlatform == TargetPlatform.iOS ||
-          defaultTargetPlatform == TargetPlatform.macOS);
+  // Decided from the platform and screen size on first layout: laptops and
+  // desktops (including the web on a big screen) start on High, phones and
+  // narrow browser windows on Low.
+  Quality? _quality;
+  Quality get _q => _quality ?? Quality.low;
 
   // Frame stats for the overlay.
   final ValueNotifier<({int fps, double ui, double gpu})> _stats =
@@ -71,7 +79,22 @@ class _CityViewState extends State<CityView> {
   void dispose() {
     SchedulerBinding.instance.removeTimingsCallback(_onTimings);
     _stats.dispose();
+    _clock.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_quality == null) {
+      final wide = MediaQuery.sizeOf(context).shortestSide >= 600;
+      final android =
+          !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+      _quality = kIsWeb
+          ? (wide ? Quality.medium : Quality.low)
+          : (android ? Quality.low : Quality.high);
+      if (_city != null) _applyLook();
+    }
   }
 
   Future<void> _load() async {
@@ -93,14 +116,22 @@ class _CityViewState extends State<CityView> {
         ..roughnessFactor = roughness;
 
   void _build(CityData city) {
+    final homeTex = FacadeTextures.residential(),
+        glassTex = FacadeTextures.glass();
+    final homes = _pbr(0.75)
+      ..baseColorTexture = homeTex.color
+      ..emissiveTexture = homeTex.lights;
+    // Glass towers: smoother so they pick up the sky.
+    final towers = _pbr(0.4)
+      ..metallicFactor = 0.1
+      ..baseColorTexture = glassTex.color
+      ..emissiveTexture = glassTex.lights;
+    final roads = _pbr(0.9);
     final materials = <String, Material>{
       'terrain': _pbr(0.95),
-      'buildings': _pbr(0.75)..baseColorTexture = FacadeTextures.residential(),
-      // Glass towers: smoother so they pick up the sky.
-      'towers': _pbr(0.4)
-        ..metallicFactor = 0.1
-        ..baseColorTexture = FacadeTextures.glass(),
-      'roads': _pbr(0.9),
+      'buildings': homes,
+      'towers': towers,
+      'roads': roads,
       'structures': _pbr(0.6),
     };
     city.layers.forEach((name, geometry) {
@@ -110,20 +141,50 @@ class _CityViewState extends State<CityView> {
       );
     });
 
-    // Rooftop items, grouped into map tiles that only show up close.
-    _details = DetailChunks(city.details);
-    _scene.add(_details.root);
+    // Small details in map tiles that only draw near the camera. Trees
+    // carry the green look, so they stay visible much farther out than
+    // rooftop clutter.
+    const plants = {
+      'treeHuangge',
+      'treeCamphor',
+      'treeBanyan',
+      'treeGinkgo',
+      'shrub',
+      'bougainvillea',
+    };
+    _vegetation = DetailChunks(
+      city.details.where((d) => plants.contains(d.type)).toList(),
+      tileSize: 300,
+      showWithin: 2400,
+    );
+    _rooftops = DetailChunks(
+      city.details.where((d) => !plants.contains(d.type)).toList(),
+    );
+    _scene
+      ..add(_vegetation.root)
+      ..add(_rooftops.root);
+    final lamps = buildStreetLamps(city.traffic);
+    _scene.add(lamps);
     _movers = Movers(city);
     _scene.add(_movers.root);
 
     // River surface, a little larger than the district so edges stay wet.
     final size = city.bounds.max - city.bounds.min;
+    final water = _pbr(0.06, vm.Vector4(0.12, 0.18, 0.19, 1));
+    _look = CityLook(
+      scene: _scene,
+      homes: homes,
+      towers: towers,
+      roads: roads,
+      water: water,
+      lamps: lamps,
+    );
     _scene.add(
       Node(
           name: 'water',
           mesh: Mesh(
             PlaneGeometry(width: size.x + 400, depth: size.y + 400),
-            _pbr(0.06, vm.Vector4(0.12, 0.18, 0.19, 1)),
+            water,
           ),
         )
         ..position = vm.Vector3(
@@ -179,71 +240,13 @@ class _CityViewState extends State<CityView> {
         _scene.add(n);
       }
     }
-    _applyQuality();
+    _applyLook();
   }
 
-  // Late-afternoon sun from the south-west: warm light, long shadows.
-  static final vm.Vector3 _sunDir = vm.Vector3(0.62, -0.5, 0.6)..normalize();
-
-  void _applyQuality() {
-    final high = _highQuality;
-    _scene.directionalLight = DirectionalLight(
-      direction: _sunDir,
-      color: vm.Vector3(1.0, 0.9, 0.76),
-      intensity: 4.2,
-      castsShadow: true,
-      shadowMaxDistance: high ? 3000 : 1800,
-      shadowCascadeCount: high ? 4 : 2,
-      shadowMapResolution: high ? 2048 : 1024,
-      shadowDepthBias: 0.4,
-      shadowNormalBias: 0.6,
-    );
-    _scene.skybox ??= Skybox(
-      GradientSkySource(
-        zenithColor: vm.Vector3(0.16, 0.38, 0.78),
-        horizonColor: vm.Vector3(0.78, 0.86, 0.95),
-        groundColor: vm.Vector3(0.5, 0.52, 0.5),
-        sunDirection: -_sunDir,
-        sunColor: vm.Vector3(4, 3.4, 2.6),
-      ),
-    );
-    _scene.environmentSettings = EnvironmentSettings(
-      toneMapping: ToneMappingMode.aces,
-      exposure: 1.05,
-      environmentIntensity: 0.75,
-      // A painted-model grade: richer colour, a touch warm and contrasty.
-      colorGradingEnabled: true,
-      saturation: 1.35,
-      contrast: 1.1,
-      temperature: 0.06,
-      // Light blue haze only far away; heavy fog kills the miniature look.
-      fogEnabled: true,
-      fogMode: FogMode.exponential,
-      fogColor: vm.Vector3(0.74, 0.83, 0.94),
-      fogDensity: 0.00005,
-      ambientOcclusionEnabled: high,
-      ambientOcclusionMethod: AmbientOcclusionMethod.groundTruth,
-      ambientOcclusionRadius: 6,
-      ambientOcclusionIntensity: 1.2,
-      screenSpaceReflectionsEnabled: high,
-      screenSpaceReflectionsMaxDistance: 600,
-      bloomEnabled: high,
-      bloomThreshold: 2.2,
-      bloomIntensity: 0.12,
-      // Tilt-shift: a narrow focus band at the orbit target, strong blur
-      // above and below it, makes the real city read as a model.
-      depthOfFieldEnabled: high,
-      depthOfFieldFStop: 0.7,
-      depthOfFieldBlurScale: 40,
-      depthOfFieldMaxForegroundBlur: 28,
-      depthOfFieldMaxBackgroundBlur: 28,
-      vignetteEnabled: true,
-      vignetteIntensity: 0.3,
-    );
-    _scene.renderScale = high ? 1.0 : 0.75;
-    _scene.antiAliasingMode = high
-        ? AntiAliasingMode.auto
-        : AntiAliasingMode.fxaa;
+  void _applyLook() {
+    _look.apply(time: _time, weather: _weather, quality: _q);
+    // Low keeps trees to a shorter range to save phones some work.
+    _vegetation.showWithin = _q == Quality.low ? 1300 : 2400;
   }
 
   void _onTick(Duration elapsed, double frameDt) {
@@ -261,7 +264,12 @@ class _CityViewState extends State<CityView> {
 
     _advanceRide(dt);
     _movers.update(dt, showCars: _mode == _Mode.ride || _orbit.distance < 900);
-    _details.update(
+    _clock.value += dt;
+    final eye = _mode == _Mode.diorama
+        ? _orbitNode.globalTransform.getTranslation()
+        : _rideNode.globalTransform.getTranslation();
+    _vegetation.update(eye);
+    _rooftops.update(
       _mode == _Mode.diorama
           ? _orbitNode.globalTransform.getTranslation()
           : _rideNode.globalTransform.getTranslation(),
@@ -353,6 +361,15 @@ class _CityViewState extends State<CityView> {
     return Stack(
       fit: StackFit.expand,
       children: [
+        DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: _look.backdrop,
+            ),
+          ),
+        ),
         if (_mode == _Mode.diorama)
           CameraControls(controller: _orbit, child: view)
         else
@@ -366,6 +383,17 @@ class _CityViewState extends State<CityView> {
               _ridePitch = -0.15;
             }),
             child: view,
+          ),
+        if (_weather == Weather.rain)
+          Positioned.fill(
+            child: IgnorePointer(
+              child: CustomPaint(
+                painter: _RainPainter(
+                  _clock,
+                  night: _time == TimeOfDayMode.night,
+                ),
+              ),
+            ),
           ),
         SafeArea(child: _topBar(city)),
         if (_mode == _Mode.diorama)
@@ -381,8 +409,15 @@ class _CityViewState extends State<CityView> {
     );
   }
 
+  // Solid light buttons, so they stay readable over a night or fog sky.
+  static final ButtonStyle _barButtonStyle = SegmentedButton.styleFrom(
+    backgroundColor: Colors.white.withValues(alpha: 0.88),
+    selectedBackgroundColor: const Color(0xffe2d9ff),
+  );
+
   Widget _topBar(CityData city) {
     final ride = _ride;
+    final wide = MediaQuery.sizeOf(context).width >= 900;
     return Padding(
       padding: const EdgeInsets.all(12),
       child: Wrap(
@@ -400,6 +435,7 @@ class _CityViewState extends State<CityView> {
             ),
           ),
           SegmentedButton<_Mode>(
+            style: _barButtonStyle,
             segments: [
               const ButtonSegment(
                 value: _Mode.diorama,
@@ -416,12 +452,79 @@ class _CityViewState extends State<CityView> {
             selected: {_mode},
             onSelectionChanged: (s) => setState(() => _mode = s.first),
           ),
+          SegmentedButton<TimeOfDayMode>(
+            style: _barButtonStyle,
+            showSelectedIcon: false,
+            segments: [
+              ButtonSegment(
+                value: TimeOfDayMode.day,
+                icon: const Icon(Icons.wb_sunny_outlined),
+                label: wide ? const Text('Day') : null,
+                tooltip: 'Day',
+              ),
+              ButtonSegment(
+                value: TimeOfDayMode.sunset,
+                icon: const Icon(Icons.wb_twilight),
+                label: wide ? const Text('Sunset') : null,
+                tooltip: 'Sunset',
+              ),
+              ButtonSegment(
+                value: TimeOfDayMode.night,
+                icon: const Icon(Icons.nightlight_outlined),
+                label: wide ? const Text('Night') : null,
+                tooltip: 'Night',
+              ),
+            ],
+            selected: {_time},
+            onSelectionChanged: (s) {
+              setState(() => _time = s.first);
+              _applyLook();
+            },
+          ),
+          SegmentedButton<Weather>(
+            style: _barButtonStyle,
+            showSelectedIcon: false,
+            segments: [
+              ButtonSegment(
+                value: Weather.clear,
+                icon: const Icon(Icons.brightness_7_outlined),
+                label: wide ? const Text('Clear') : null,
+                tooltip: 'Clear',
+              ),
+              ButtonSegment(
+                value: Weather.fog,
+                icon: const Icon(Icons.foggy),
+                label: wide ? const Text('Fog') : null,
+                tooltip: 'Fog',
+              ),
+              ButtonSegment(
+                value: Weather.rain,
+                icon: const Icon(Icons.water_drop_outlined),
+                label: wide ? const Text('Rain') : null,
+                tooltip: 'Rain',
+              ),
+            ],
+            selected: {_weather},
+            onSelectionChanged: (s) {
+              setState(() => _weather = s.first);
+              _applyLook();
+            },
+          ),
           FilledButton.tonal(
             onPressed: () {
-              setState(() => _highQuality = !_highQuality);
-              _applyQuality();
+              setState(
+                () => _quality =
+                    Quality.values[(_q.index + 1) % Quality.values.length],
+              );
+              _applyLook();
             },
-            child: Text(_highQuality ? 'Quality: High' : 'Quality: Low'),
+            child: Text(
+              'Quality: ${switch (_q) {
+                Quality.low => 'Low',
+                Quality.medium => 'Medium',
+                Quality.high => 'High',
+              }}',
+            ),
           ),
         ],
       ),
@@ -468,4 +571,31 @@ class _CityViewState extends State<CityView> {
       ),
     ),
   );
+}
+
+/// Falling rain streaks drawn over the 3D view.
+class _RainPainter extends CustomPainter {
+  _RainPainter(this.clock, {required this.night}) : super(repaint: clock);
+
+  final ValueNotifier<double> clock;
+  final bool night;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = (night ? const Color(0xff9fb4d8) : Colors.white).withValues(
+        alpha: 0.32,
+      )
+      ..strokeWidth = 1.2
+      ..strokeCap = StrokeCap.round;
+    final t = clock.value;
+    for (final (x, y, speed) in RainPainter.drops) {
+      final py = ((y + t * speed * 1.6) % 1.0) * (size.height + 60) - 30;
+      final px = (x * size.width + py * 0.12) % size.width;
+      canvas.drawLine(Offset(px, py), Offset(px - 4, py - 22 * speed), paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_RainPainter old) => old.night != night;
 }

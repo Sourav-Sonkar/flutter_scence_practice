@@ -75,7 +75,7 @@ class DetailChunks {
   final double tileSize;
 
   /// Tiles whose centre is within this distance of the camera are drawn.
-  final double showWithin;
+  double showWithin;
 
   final Node root = Node(name: 'details');
   final List<(Node, vm.Vector3)> _tiles = [];
