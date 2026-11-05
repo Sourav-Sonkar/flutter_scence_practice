@@ -113,16 +113,23 @@ class PaintedLook {
         vm.Vector3(0.55, 0.6, 0.95) * night;
     final bounce =
         vm.Vector3(0.55, 0.48, 0.38) * (1 - 0.85 * night) + sky.cityGlow * 2;
+    // Night exposure lifts everything, so the ambient fill and the moon are
+    // dimmed after dark to keep walls in shadow and let lit windows read.
+    final dim = 1 - 0.55 * night;
+    skyLight.scale(dim);
+    bounce.scale(dim);
     for (final m in [...materials.values, ..._details.values]) {
       m.parameters
         ..setVec3('sky_light', skyLight)
         ..setVec3('shade_tint', shade)
         ..setVec3('ground_bounce', bounce)
-        // The moon is faint; boost its band so night shapes still read.
-        ..setFloat('light_scale', 0.46 + 0.25 * night);
+        // Moonlight reads far too bright at night exposure on pale walls;
+        // keep it a soft blue edge rather than a second daylight.
+        ..setFloat('light_scale', 0.46 * (1 - 0.75 * night));
     }
+    _tower.parameters.setFloat('daylight', 1 - night);
     _home.parameters.setFloat('lights_strength', 1.4 * night);
-    _tower.parameters.setFloat('lights_strength', 0.32 * night);
+    _tower.parameters.setFloat('lights_strength', 0.2 * night);
     final level = CityLook.lightLevelFor(hour);
     if (level != _level) {
       _level = level;

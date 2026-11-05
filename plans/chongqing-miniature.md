@@ -363,3 +363,19 @@ and in Painted mode.
   to white and they used to fade into a pale evening sky.
 - Web testing note: Chrome caches assets such as `.fmat`; refresh them with
   `fetch(url, {cache: 'reload'})` before judging a shader change.
+
+### Painted night (done)
+At 21:00 Painted glass towers glowed pale white. Found by tinting the tower material red,
+then showing only its window-light term: the bands were lit office floors, which saturate
+to white at night exposure. Fixes:
+- Tower window lights 0.2 x night (was 0.32), tinted warm in the shader so office floors
+  read as lamplight.
+- New `daylight` material parameter: glass reflects a deep blue by day and goes dark at
+  night (it used a fixed daytime blue before).
+- Ambient fill dimmed to 45% at night, and moonlight to 25%, so walls sit in shadow and lit
+  windows carry the scene.
+Chrome, Medium, Painted night: about 29-31 FPS in the diorama, 36-39 in the drone.
+
+## Future ideas
+- The title (now always "Chongqing · Yuzhong") should follow the district the camera is in,
+  updating as the drone or a ride crosses into another district. Requested 2026-11-05.
