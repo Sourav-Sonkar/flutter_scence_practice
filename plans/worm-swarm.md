@@ -101,3 +101,66 @@ Pure-Dart tests on `WormSwarmSim` (small worm count, many steps):
 4. Profile mode (`--profile`) FPS check; if UI thread is over budget, lower worm count or
    collision iterations first.
 5. Commit on `feature/worm-swarm` once it looks right.
+
+---
+
+## How it works in flutter_scene
+- **Worms are dots on a string.** Each worm is 16 points. Each point stores its position
+  and its previous position (Verlet integration). Velocity is the difference, so there is
+  no rotation and no rigid-body solver. This is the Short's "dots and string" trick.
+- **String.** After moving, each pair of neighbouring points is pushed back to the rest
+  length, and points two apart are kept from getting too close so the worm can't fold.
+- **Crawl AI.** Each head steers to its own slot around the target, with a sideways sine
+  wiggle. Body points touching anything crawl toward the point ahead, and grip walls so
+  the worm can climb. The Short uses "every dot crawls to the player", which is the same idea.
+- **Worm against worm.** Points go into a spatial grid of cells about one worm-thickness
+  wide. Each point checks only nearby cells, which is the Short's grid trick. Touching
+  another worm counts as support, so worms climb over each other and the pile grows.
+- **World collision.** The floor and the block are simple shapes, checked directly. That
+  is the cheap version of the Short's distance field, and it is exact for boxes.
+- **Rendering.** All 2,400 capsules are one `InstancedMesh`. Every frame the app writes
+  one matrix per capsule (position at the segment's middle, rotation along it, scale for
+  taper) with `updateInstanceTransforms`, and flutter_scene draws them in one draw call.
+  The scene uses flutter_scene's own `DirectionalLight` shadows and `EnvironmentSettings`
+  post-processing, and runs inside `SceneView` with `onTick`.
+
+## Performance (Android follow-up, 2026-11-05)
+### Measurements
+| Where | Before | After |
+| --- | --- | --- |
+| Android emulator, software GPU (SwiftShader) | about 1 FPS real (counter wrongly said 20) | not fixable in app code |
+| Android emulator, host GPU (`-gpu host`) | 60 FPS spread out, 20 to 40 FPS in a dense pile (debug) | about 36 FPS dense pile in debug |
+| Motorola Edge 70 Pro, profile, low preset | 49 FPS, GPU about 16 ms with a dense pile on screen | 60 FPS, physics about 5 ms, UI about 8 ms, GPU about 2 ms |
+| Physics only, native code on Mac, dense pile | 3.24 ms per frame | 1.16 ms per frame |
+
+### Why iOS was smooth and Android was not
+1. The emulator was drawing in software. Its GPU mode was "auto" and it picked
+   SwiftShader, so all rendering ran on the CPU. iOS Simulator draws with the Mac's real
+   GPU through Metal. Fix for testing: Android Studio > Device Manager > Pixel 9 > Edit >
+   Graphics: Hardware, or launch with `emulator -avd Pixel_9 -gpu host`.
+2. The FPS counter lied. It clamped frame time to 0.05 s before counting, so it could
+   never show below 20. The physics used the same clamp, so worms moved in slow motion.
+3. Physics cost grows when worms pile up, and the old fixed-step loop ran up to 4 catch-up
+   steps after a slow frame, which made the next frame slower too.
+4. Debug mode on any device runs unoptimised code. Real numbers need `--profile`.
+
+### Changes made
+- `lib/worms/worm_sim.dart`
+  - One physics step per frame, sized to the real frame time (clamped 1/240 to 1/30 s),
+    using time-corrected Verlet so speed is the same at any frame rate. No catch-up steps.
+  - Spatial grid rebuilt with a counting sort, so neighbours sit together in memory, and
+    each nearby pair is visited once (own cell plus 13 "forward" neighbour cells).
+  - Chain lengths re-solved after collisions so segments do not stretch.
+- `lib/worms/worm_swarm_view.dart`
+  - Overlay shows real FPS plus physics, UI-thread and GPU milliseconds.
+  - Quality presets with a corner button. Low (default on Android and web) turns off
+    ambient occlusion, bloom and the worms' clearcoat, uses one shadow cascade, FXAA and
+    60% render resolution. High (default on iOS/macOS) keeps the full look.
+  - Capsules use fewer triangles (8 radial segments, 2 cap rings).
+- Camera framing adapts to the aspect ratio. Portrait views pull back at most 2x, then
+  pan sideways to follow the target; landscape keeps the original fixed view.
+
+### How to measure
+- Use a real device in profile mode: `fvm flutter run --profile --enable-flutter-gpu`.
+- The overlay shows FPS plus physics (`sim`), UI-thread (`ui`) and GPU (`gpu`) milliseconds.
+- On the emulator, make sure Graphics is set to Hardware, or launch it with `-gpu host`.

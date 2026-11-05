@@ -35,7 +35,8 @@ class WormSwarmSim {
     radii = Float32List(n);
     _phase = Float32List(wormCount);
     _orbit = Float32List(wormCount * 3);
-    _next = Int32List(n);
+    _cellOf = Int32List(n);
+    _sorted = Int32List(n);
     for (var w = 0; w < wormCount; w++) {
       _phase[w] = _rng.nextDouble() * 2 * pi;
       // Random offset inside a flattened sphere: where this worm's head
@@ -86,18 +87,35 @@ class WormSwarmSim {
   late final Float32List _normal;
   late final Float32List _phase;
   late final Float32List _orbit;
-  late final Int32List _next;
-  final Int32List _cellHead = Int32List(_hashSize);
+  // Spatial grid, rebuilt each step by counting sort: points in bucket k are
+  // _sorted[_cellStart[k] .. _cellStart[k + 1]).
+  late final Int32List _cellOf;
+  late final Int32List _sorted;
+  final Int32List _cellStart = Int32List(_hashSize + 1);
+  final Int32List _cursor = Int32List(_hashSize);
+
+  /// The 13 neighbour cells "after" a cell. Visiting only these (plus the
+  /// cell itself) sees every nearby pair exactly once.
+  static const List<int> _halfNeighbours = [
+    1, 0, 0, -1, 1, 0, 0, 1, 0, 1, 1, 0, //
+    -1, -1, 1, 0, -1, 1, 1, -1, 1, -1, 0, 1, 0, 0, 1, //
+    1, 0, 1, -1, 1, 1, 0, 1, 1, 1, 1, 1,
+  ];
 
   static const int _hashSize = 8192;
-  static const double substep = 1 / 120;
-  static const int maxSubsteps = 4;
+
+  /// One physics step per frame, sized to the frame time but kept inside
+  /// this range so a hitch can't blow the chains apart. A slow frame never
+  /// triggers extra catch-up steps, so it can't snowball into slower frames.
+  static const double minStep = 1 / 240;
+  static const double maxStep = 1 / 30;
 
   static const double gravity = 9.8;
   static const double headSteer = 34;
   static const double wiggle = 11;
   static const double crawl = 16;
   static const double climb = 22;
+  // Fraction of velocity kept per 1/120 s; rescaled to the actual step.
   static const double airDamping = 0.995;
   static const double contactFriction = 0.86;
   static const double targetMaxSpeed = 1.1;
@@ -109,7 +127,7 @@ class WormSwarmSim {
   final vm.Vector3 targetGoal = vm.Vector3(0, 0, 1.4);
 
   double _time = 0;
-  double _accumulator = 0;
+  double _lastStep = 1 / 60;
 
   void setTargetGoal(vm.Vector3 goal) {
     targetGoal
@@ -118,23 +136,19 @@ class WormSwarmSim {
       ..z = goal.z.clamp(-arenaHalfZ + 0.2, arenaHalfZ - 0.2);
   }
 
-  /// Advances the simulation by [dt] seconds using fixed substeps.
+  /// Advances the simulation by one step of [dt] seconds (clamped).
   void step(double dt) {
-    _accumulator = min(_accumulator + dt, substep * maxSubsteps);
-    while (_accumulator >= substep) {
-      _accumulator -= substep;
-      _substep(substep);
-    }
-  }
-
-  void _substep(double h) {
+    final h = dt.clamp(minStep, maxStep);
     _time += h;
     _moveTarget(h);
-    _integrate(h);
-    for (var k = 0; k < 3; k++) {
-      _solveChains();
-    }
+    _integrate(h, h / _lastStep);
+    _lastStep = h;
+    _solveChains();
+    _solveChains();
     _collideWorms();
+    // Collisions shove points apart; restore segment lengths afterwards.
+    _solveChains();
+    _solveChains();
     for (var w = 0; w < wormCount; w++) {
       _resolveWorld(w * pointsPerWorm, pointsPerWorm);
     }
@@ -151,8 +165,12 @@ class WormSwarmSim {
     }
   }
 
-  void _integrate(double h) {
+  /// Time-corrected Verlet: [ratio] (this step / last step) rescales the
+  /// implied velocity so a changing frame time doesn't change speed.
+  void _integrate(double h, double ratio) {
     final h2 = h * h;
+    final airDamp = pow(airDamping, h * 120) * ratio;
+    final contactDamp = pow(contactFriction, h * 120) * ratio;
     final ppw = pointsPerWorm;
     for (var w = 0; w < wormCount; w++) {
       final base = w * ppw;
@@ -161,7 +179,7 @@ class WormSwarmSim {
         final ix = i * 3;
         final x = pos[ix], y = pos[ix + 1], z = pos[ix + 2];
         final c = _contact[i];
-        final damp = c != 0 ? contactFriction : airDamping;
+        final damp = c != 0 ? contactDamp : airDamp;
         var vx = (x - _prev[ix]) * damp;
         var vy = (y - _prev[ix + 1]) * damp;
         var vz = (z - _prev[ix + 2]) * damp;
@@ -258,37 +276,49 @@ class WormSwarmSim {
 
   void _collideWorms() {
     final n = wormCount * pointsPerWorm;
-    final cell = radius * 2;
-    final inv = 1 / cell;
-    _cellHead.fillRange(0, _hashSize, -1);
+    final inv = 1 / (radius * 2);
+    final ppw = pointsPerWorm;
+    _cellStart.fillRange(0, _hashSize + 1, 0);
     for (var i = 0; i < n; i++) {
       final key = _cellKey(
         (pos[i * 3] * inv).floor(),
         (pos[i * 3 + 1] * inv).floor(),
         (pos[i * 3 + 2] * inv).floor(),
       );
-      _next[i] = _cellHead[key];
-      _cellHead[key] = i;
+      _cellOf[i] = key;
+      _cellStart[key + 1]++;
     }
-    final ppw = pointsPerWorm;
+    for (var k = 0; k < _hashSize; k++) {
+      _cellStart[k + 1] += _cellStart[k];
+    }
+    _cursor.setRange(0, _hashSize, _cellStart);
+    for (var i = 0; i < n; i++) {
+      _sorted[_cursor[_cellOf[i]]++] = i;
+    }
+
     for (var i = 0; i < n; i++) {
       final ix = i * 3;
       final cx = (pos[ix] * inv).floor();
       final cy = (pos[ix + 1] * inv).floor();
       final cz = (pos[ix + 2] * inv).floor();
       final wi = i ~/ ppw;
-      for (var ox = -1; ox <= 1; ox++) {
-        for (var oy = -1; oy <= 1; oy++) {
-          for (var oz = -1; oz <= 1; oz++) {
-            var j = _cellHead[_cellKey(cx + ox, cy + oy, cz + oz)];
-            while (j >= 0) {
-              // Each pair once; skip close neighbours on the same worm.
-              if (j > i && !(j ~/ ppw == wi && j - i <= 2)) {
-                _separate(i, j);
-              }
-              j = _next[j];
-            }
-          }
+      // Own cell: each pair once via j > i.
+      final own = _cellOf[i];
+      for (var s = _cellStart[own], e = _cellStart[own + 1]; s < e; s++) {
+        final j = _sorted[s];
+        if (j > i && !(j ~/ ppw == wi && j - i <= 2)) _separate(i, j);
+      }
+      for (var o = 0; o < _halfNeighbours.length; o += 3) {
+        final key = _cellKey(
+          cx + _halfNeighbours[o],
+          cy + _halfNeighbours[o + 1],
+          cz + _halfNeighbours[o + 2],
+        );
+        for (var s = _cellStart[key], e = _cellStart[key + 1]; s < e; s++) {
+          final j = _sorted[s];
+          // Skip close neighbours on the same worm.
+          if (j ~/ ppw == wi && (j - i).abs() <= 2) continue;
+          _separate(i, j);
         }
       }
     }

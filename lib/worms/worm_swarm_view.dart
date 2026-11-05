@@ -1,6 +1,8 @@
 import 'dart:math';
 
 import 'package:flutter/material.dart' hide Material;
+import 'package:flutter/foundation.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter_scene/scene.dart';
 import 'package:vector_math/vector_math.dart' as vm;
 
@@ -22,16 +24,35 @@ class _WormSwarmViewState extends State<WormSwarmView> {
     position: vm.Vector3(0, 2.7, 3.6),
     target: vm.Vector3(0, 0.1, 0.2),
   );
-  final ValueNotifier<int> _fps = ValueNotifier(0);
+
+  /// Frame stats for the overlay: fps, then milliseconds for the worm
+  /// simulation, the whole UI thread, and the raster (GPU) thread.
+  final ValueNotifier<({int fps, double sim, double ui, double raster})>
+  _stats = ValueNotifier((fps: 0, sim: 0, ui: 0, raster: 0));
+  final Stopwatch _simWatch = Stopwatch();
+  double _simMs = 0, _uiMs = 0, _rasterMs = 0;
 
   late final InstancedMesh _worms;
+  late final PhysicallyBasedMaterial _wormMaterial;
   late final Node _targetNode;
   bool _ready = false;
+
+  /// Phones and the web get the light preset by default; the button in the
+  /// corner switches between the two.
+  bool _highQuality =
+      !kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.iOS ||
+          defaultTargetPlatform == TargetPlatform.macOS);
   Size _viewSize = Size.zero;
   double _idle = 0;
   double _clock = 0;
   double _fpsTime = 0;
   int _fpsFrames = 0;
+
+  // Camera rig: look direction and distance that frame the arena in landscape.
+  static final vm.Vector3 _camLook = vm.Vector3(0, 0.1, 0.2);
+  static final vm.Vector3 _camOffset = vm.Vector3(0, 2.6, 3.4);
+  double _camPanX = 0;
 
   static const double _targetRadius = 0.07;
   static const double _targetHover = 0.45;
@@ -39,6 +60,7 @@ class _WormSwarmViewState extends State<WormSwarmView> {
   @override
   void initState() {
     super.initState();
+    SchedulerBinding.instance.addTimingsCallback(_onTimings);
     Scene.initializeStaticResources().then((_) {
       _buildScene();
       if (mounted) setState(() => _ready = true);
@@ -47,7 +69,8 @@ class _WormSwarmViewState extends State<WormSwarmView> {
 
   @override
   void dispose() {
-    _fps.dispose();
+    SchedulerBinding.instance.removeTimingsCallback(_onTimings);
+    _stats.dispose();
     super.dispose();
   }
 
@@ -57,29 +80,43 @@ class _WormSwarmViewState extends State<WormSwarmView> {
         ..metallicFactor = 0
         ..roughnessFactor = roughness;
 
-  void _buildScene() {
+  /// Lighting, post-processing and the worm finish. The high preset adds
+  /// ambient occlusion, bloom, four shadow cascades and a wet clearcoat on
+  /// the worms; the low preset drops those and renders at 60% resolution,
+  /// since a phone GPU is limited by how many pixels it shades.
+  void _applyQuality() {
+    final high = _highQuality;
+    // Clearcoat moves the worms onto a costlier shader; 0 moves them back.
+    _wormMaterial.clearcoat = high ? 0.7 : 0.0;
     _scene.directionalLight = DirectionalLight(
       direction: vm.Vector3(-0.45, -1.0, -0.35),
       color: vm.Vector3(1.0, 0.96, 0.9),
       intensity: 3.2,
       castsShadow: true,
-      shadowMaxDistance: 20,
+      shadowMaxDistance: high ? 20 : 8,
+      shadowCascadeCount: high ? 4 : 1,
     );
     _scene.environmentSettings = EnvironmentSettings(
       toneMapping: ToneMappingMode.aces,
       exposure: 0.95,
-      environmentIntensity: 0.45,
-      bloomEnabled: true,
+      environmentIntensity: high ? 0.45 : 0.6,
+      bloomEnabled: high,
       bloomThreshold: 1.2,
       bloomIntensity: 0.25,
-      ambientOcclusionEnabled: true,
+      ambientOcclusionEnabled: high,
       ambientOcclusionMethod: AmbientOcclusionMethod.groundTruth,
       ambientOcclusionIntensity: 1.3,
       ambientOcclusionRadius: 0.2,
       vignetteEnabled: true,
       vignetteIntensity: 0.3,
     );
+    _scene.renderScale = high ? 1.0 : 0.6;
+    _scene.antiAliasingMode = high
+        ? AntiAliasingMode.auto
+        : AntiAliasingMode.fxaa;
+  }
 
+  void _buildScene() {
     // Floor, with a grid so motion reads clearly.
     _scene.add(
       Node(
@@ -137,12 +174,13 @@ class _WormSwarmViewState extends State<WormSwarmView> {
       geometry: CapsuleGeometry(
         radius: _sim.radius,
         height: _sim.segmentLength,
-        radialSegments: 10,
-        capRings: 3,
+        radialSegments: 8,
+        capRings: 2,
       ),
-      material: _pbr(vm.Vector3(0.3, 0.02, 0.03), roughness: 0.3)
-        ..clearcoat = 0.7
-        ..clearcoatRoughness = 0.12,
+      material: _wormMaterial = _pbr(
+        vm.Vector3(0.3, 0.02, 0.03),
+        roughness: 0.3,
+      )..clearcoatRoughness = 0.12,
     );
     final rng = Random(3);
     final segs = _sim.pointsPerWorm - 1;
@@ -172,6 +210,7 @@ class _WormSwarmViewState extends State<WormSwarmView> {
       ),
     )..castsShadows = false;
     _scene.add(_targetNode);
+    _applyQuality();
   }
 
   /// Places each capsule between two consecutive simulated points.
@@ -238,22 +277,59 @@ class _WormSwarmViewState extends State<WormSwarmView> {
     });
   }
 
-  void _onTick(Duration elapsed, double dt) {
-    dt = min(dt, 0.05);
+  void _onTick(Duration elapsed, double frameDt) {
+    _fpsFrames++;
+    _fpsTime += frameDt;
+    final dt = min(frameDt, 0.05);
     _clock += dt;
     _idle += dt;
     if (_idle > 3) _autopilot();
+    _simWatch
+      ..reset()
+      ..start();
     _sim.step(dt);
     _writeWormTransforms();
+    _simWatch.stop();
+    _simMs = _simMs * 0.9 + _simWatch.elapsedMicroseconds / 1000 * 0.1;
+    _updateCamera(dt);
     final bob = sin(_clock * 3) * 0.04;
     _targetNode.position = _sim.target + vm.Vector3(0, _targetHover + bob, 0);
 
-    _fpsFrames++;
-    _fpsTime += dt;
     if (_fpsTime >= 0.25) {
-      _fps.value = (_fpsFrames / _fpsTime).round();
+      _stats.value = (
+        fps: (_fpsFrames / _fpsTime).round(),
+        sim: _simMs,
+        ui: _uiMs,
+        raster: _rasterMs,
+      );
       _fpsFrames = 0;
       _fpsTime = 0;
+    }
+  }
+
+  /// Keeps the arena's width in view for any aspect ratio. Narrow (portrait)
+  /// views pull back at most 2x, then pan sideways to follow the target so
+  /// the worms stay a readable size.
+  void _updateCamera(double dt) {
+    if (_viewSize.isEmpty) return;
+    final aspect = _viewSize.width / _viewSize.height;
+    final tanHalfX = tan(_camera.fovRadiansY / 2) * aspect;
+    final halfWidth = _sim.arenaHalfX + 0.3;
+    final baseDist = _camOffset.length;
+    final dist = (halfWidth / tanHalfX).clamp(baseDist, baseDist * 2);
+    final maxPan = max(0.0, halfWidth - dist * tanHalfX);
+    final wantPan = _sim.target.x.clamp(-maxPan, maxPan);
+    _camPanX += (wantPan - _camPanX) * min(1.0, dt * 2.5);
+    final look = _camLook + vm.Vector3(_camPanX, 0, 0);
+    _camera.target = look;
+    _camera.position = look + _camOffset * (dist / baseDist);
+  }
+
+  void _onTimings(List<FrameTiming> timings) {
+    for (final t in timings) {
+      _uiMs = _uiMs * 0.8 + t.buildDuration.inMicroseconds / 1000 * 0.2;
+      _rasterMs =
+          _rasterMs * 0.8 + t.rasterDuration.inMicroseconds / 1000 * 0.2;
     }
   }
 
@@ -307,16 +383,29 @@ class _WormSwarmViewState extends State<WormSwarmView> {
               child: SceneView(_scene, camera: _camera, onTick: _onTick),
             ),
             Positioned(
+              top: 16,
+              right: 16,
+              child: SafeArea(
+                child: FilledButton.tonal(
+                  onPressed: () {
+                    setState(() => _highQuality = !_highQuality);
+                    _applyQuality();
+                  },
+                  child: Text(_highQuality ? 'Quality: High' : 'Quality: Low'),
+                ),
+              ),
+            ),
+            Positioned(
               left: 0,
               right: 0,
               bottom: 48,
               child: IgnorePointer(
-                child: ValueListenableBuilder<int>(
-                  valueListenable: _fps,
-                  builder: (context, fps, _) => Column(
+                child: ValueListenableBuilder(
+                  valueListenable: _stats,
+                  builder: (context, stats, _) => Column(
                     children: [
                       Text(
-                        '$fps',
+                        '${stats.fps}',
                         style: const TextStyle(
                           color: Color(0xff7fe6dc),
                           fontSize: 56,
@@ -326,6 +415,16 @@ class _WormSwarmViewState extends State<WormSwarmView> {
                       const Text(
                         'F P S',
                         style: TextStyle(color: Colors.white70, fontSize: 14),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'sim ${stats.sim.toStringAsFixed(1)} ms · '
+                        'ui ${stats.ui.toStringAsFixed(1)} ms · '
+                        'gpu ${stats.raster.toStringAsFixed(1)} ms',
+                        style: const TextStyle(
+                          color: Colors.white60,
+                          fontSize: 12,
+                        ),
                       ),
                     ],
                   ),
