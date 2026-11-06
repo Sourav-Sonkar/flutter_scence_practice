@@ -419,5 +419,7 @@ Chrome, Medium, Painted night: about 29-31 FPS in the diorama, 36-39 in the dron
 - Street levelling (_levelStreets): ground levelled across each street to
   its height, flat 7 m past the edge, fading over 9 m (grid is ~8 m).
   Still: uphill banks remain on cross-slope streets (Minzu Road postcard)
-  because one 8 m terrain cell ramps back to the hillside. A finer terrain
-  grid near streets is the real fix.
+  where the ground beside the street really is higher. Tried a 4 m terrain
+  grid (2026-11-06): same banks in an A/B at the Pedestrian street view,
+  +4.9 MB of assets, so reverted. Grid size is not the cause; a real fix
+  would be retaining walls or stepped terraces along such streets.
