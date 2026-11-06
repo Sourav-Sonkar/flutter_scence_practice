@@ -124,8 +124,16 @@ fragment {
     vec3 ambient = mix(material_params.ground_bounce, material_params.sky_light, up);
     vec3 shaded = albedo * material_params.shade_tint * ambient * 0.78;
 
-    // Sunlit side: albedo in the sun's colour, in one flat band.
-    vec3 sunlit = albedo * (ambient * 0.4 + sun * material_params.light_scale);
+    // Sunlit side in two painted tones: faces turned squarely to the sun
+    // full strength, glancing faces a step softer. This separates roofs,
+    // ground and walls into distinct planes instead of one pale wash (at
+    // noon roofs lead; at golden hour the sun-facing walls do).
+    float facing = 0.72;
+    if (frag_info.has_directional_light > 0.5) {
+      vec3 l = -normalize(frag_info.directional_light_direction.xyz);
+      facing = mix(0.72, 1.0, smoothstep(0.5, 0.62, dot(n, l)));
+    }
+    vec3 sunlit = albedo * (ambient * 0.4 + sun * material_params.light_scale * facing);
 
     // A narrow warm rim right at the light/shadow boundary, as painters do.
     float rim = lit * (1.0 - lit) * 4.0;

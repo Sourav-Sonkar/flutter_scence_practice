@@ -118,6 +118,13 @@ class PaintedLook {
     final dim = 1 - 0.55 * night;
     skyLight.scale(dim);
     bounce.scale(dim);
+    // A high sun washed everything toward pale grey: sunlit ground and roofs
+    // saturated in the tone map and the sky fill lifted shadows to lavender.
+    // As the sun climbs, ease both, so midday keeps rich colour and clear,
+    // cool shadows (the summer-afternoon look) instead of going flat.
+    final high = ((sky.elevation - 15) / 30).clamp(0.0, 1.0);
+    final sunScale = 0.46 * (1 - 0.75 * night) * (1 - 0.28 * high);
+    skyLight.scale(1 - 0.32 * high);
     for (final m in [...materials.values, ..._details.values]) {
       m.parameters
         ..setVec3('sky_light', skyLight)
@@ -125,7 +132,7 @@ class PaintedLook {
         ..setVec3('ground_bounce', bounce)
         // Moonlight reads far too bright at night exposure on pale walls;
         // keep it a soft blue edge rather than a second daylight.
-        ..setFloat('light_scale', 0.46 * (1 - 0.75 * night));
+        ..setFloat('light_scale', sunScale);
     }
     _tower.parameters.setFloat('daylight', 1 - night);
     _home.parameters.setFloat('lights_strength', 1.4 * night);

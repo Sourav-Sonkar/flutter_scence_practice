@@ -394,3 +394,13 @@ Chrome, Medium, Painted night: about 29-31 FPS in the diorama, 36-39 in the dron
 - Vertex alpha is now kept when loading layers (was forced to 1).
 - Assets grew: yuzhong_tip 3.07 → 4.58 MB, jialing_riverside 9.16 → 12.67 MB.
 - Chrome caches the district .json/.bin too: re-fetch with `cache:'reload'`.
+
+## Painted noon (done)
+- Noon washed out: one flat sunlit band made roofs, ground and sun-side walls
+  the same pale tone, and a strong sky fill lifted shadows to lavender.
+- painted.fmat: two sunlit tones (faces square to the sun full, glancing
+  faces 0.72), so planes separate; at golden hour sun-facing walls lead.
+- PaintedLook: as the sun climbs (15°..45°) sun strength eases 28% and the
+  sky fill 32%. CityLook: the Painted grade firms up toward midday
+  (contrast 0.94 -> 1.12, saturation +0.12, brightness 1.06 -> 0.96).
+- Still pale: the beige/grey ground (part of "improve the city").

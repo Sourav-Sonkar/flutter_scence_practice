@@ -56,7 +56,7 @@ class CityLook {
   bool _reflections = false;
   int _lightLevel = -1;
   double _lastHour = -1;
-  double _gradeSat = -1, _gradeTemp = -1, _emissive = -1;
+  double _gradeSat = -1, _gradeTemp = -1, _gradeContrast = -1, _emissive = -1;
   late final DirectionalLight _light = DirectionalLight(castsShadow: true);
 
   /// Whether the Painted style is active (changes the colour grade).
@@ -131,6 +131,7 @@ class CityLook {
     _lightLevel = -1; // force everything to refresh on the next update
     _lastHour = -1;
     _gradeSat = -1;
+    _gradeContrast = -1;
     _emissive = -1;
   }
 
@@ -209,18 +210,27 @@ class CityLook {
     // visible steps.
     // Painted: softer contrast and a warm, slightly faded, sunny palette
     // (the materials already add saturation, so the grade stays gentle).
+    // Under a high sun that softness washes the city out, so the grade
+    // firms up toward midday: more contrast and colour, a touch darker.
+    final high = painted && !fog && !rain
+        ? ((sky.elevation - 15) / 30).clamp(0.0, 1.0)
+        : 0.0;
     final sat = painted
-        ? (fog || rain ? 1.0 : 1.12 - 0.1 * night)
+        ? (fog || rain ? 1.0 : 1.12 - 0.1 * night + 0.12 * high)
         : (fog || rain ? 1.05 : 1.35 - 0.15 * night);
     final temp = 0.06 + 0.16 * sky.golden - 0.1 * night + (painted ? 0.05 : 0);
-    if ((sat - _gradeSat).abs() > 0.02 || (temp - _gradeTemp).abs() > 0.01) {
+    final contrast = painted ? 0.94 + 0.18 * high : 1.1;
+    if ((sat - _gradeSat).abs() > 0.02 ||
+        (temp - _gradeTemp).abs() > 0.01 ||
+        (contrast - _gradeContrast).abs() > 0.02) {
       _gradeSat = sat;
       _gradeTemp = temp;
+      _gradeContrast = contrast;
       scene.postProcess.colorGrading
         ..saturation = sat
         ..temperature = temp
-        ..contrast = painted ? 0.94 : 1.1
-        ..brightness = painted ? 1.06 : 1.0;
+        ..contrast = contrast
+        ..brightness = painted ? 1.06 - 0.1 * high : 1.0;
     }
     // Bloom: only the brightest lights glow, a little more so at night.
     scene.postProcess.bloom
