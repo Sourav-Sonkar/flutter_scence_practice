@@ -51,6 +51,34 @@ const Map<String, District> districts = {
     north: 29.570,
     east: 106.570,
   ),
+  // Across the Yangtze from the tip: Shangxin Street (the cableway's south
+  // station) and the Nan'an hillside. Its west edge is yuzhong_tip's east
+  // edge and nanbin_road's east edge.
+  'nanan_riverside': District(
+    title: "Nan'an Riverside",
+    south: 29.540,
+    west: 106.590,
+    north: 29.568,
+    east: 106.606,
+  ),
+  // The south bank opposite Yuzhong: the Nanbin Road riverfront. Its north
+  // edge is exactly yuzhong_tip's south edge.
+  'nanbin_road': District(
+    title: 'Nanbin Road',
+    south: 29.540,
+    west: 106.570,
+    north: 29.552,
+    east: 106.590,
+  ),
+  // Across the Jialing to the north: Jiangbeizui, the Grand Theatre and the
+  // Jiangbei CBD. Its south edge is exactly yuzhong_tip's north edge.
+  'jiangbeizui': District(
+    title: 'Jiangbeizui',
+    south: 29.568,
+    west: 106.570,
+    north: 29.580,
+    east: 106.590,
+  ),
 };
 
 District districtOrExit(List<String> args) {

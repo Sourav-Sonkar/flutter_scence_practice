@@ -292,7 +292,8 @@ class CityBuilder {
         final ring = _ringFromGeom(e['geometry']);
         if (ring.length >= 3) covers.add((Cover.paved, ring));
         _count('plaza areas');
-        final name = tags['name:en'] ?? tags['name'];
+        // Chips need a name visitors can read, like the building chips.
+        final name = tags['name:en'];
         if (name != null && tags['place'] == 'square' && ring.length >= 3) {
           var cx = 0.0, cz = 0.0;
           for (final (x, z) in ring) {
@@ -384,6 +385,10 @@ class CityBuilder {
         points: runs.first,
       ));
     }
+    _infill(homes, towers, covers, [
+      ...monorail,
+      for (final r in rides) r.points,
+    ]);
     // Masks keep trees off buildings, roads and the monorail corridor.
     final built = Mask(terrain);
     for (final r in _buildingRings) {
@@ -426,6 +431,171 @@ class CityBuilder {
         for (final r in _roadRuns)
           if (r.bridge) (pts: r.pts, heights: r.heights, half: r.half),
       ];
+  }
+
+  // ---- infill ----
+
+  /// OpenStreetMap maps only a fraction of the buildings outside the centre
+  /// (Nan'an and Jiangbeizui have about a hundred each), so whole hillsides
+  /// of apartment blocks would be missing. Where a street has no mapped
+  /// buildings near it, line it with generated blocks: set back from the
+  /// road, facing it, in Chongqing's usual mix of older six-to-nine floor
+  /// walk-ups, mid-rise slabs and 30-plus floor towers. Mapped buildings,
+  /// roads, parks, woods, the river and the monorail stay clear, and
+  /// well-mapped areas are left as they are.
+  void _infill(
+    MeshLayer homes,
+    MeshLayer towers,
+    List<(Cover, List<P2>)> covers,
+    List<List<V3>> lines,
+  ) {
+    final taken = Mask(terrain);
+    for (final r in _buildingRings) {
+      taken.markRing(r, pad: 4);
+    }
+    for (final r in _roadRuns) {
+      for (final (x, z) in r.pts) {
+        taken.markDisc(x, z, r.half + 2);
+      }
+    }
+    // Monorail and cableway corridors: nothing generated under the cabins.
+    for (final track in lines) {
+      for (final (x, _, z) in track) {
+        taken.markDisc(x, z, 14);
+      }
+    }
+    final green = [
+      for (final (c, ring) in covers)
+        if (c == Cover.park || c == Cover.wood || c == Cover.grass) ring,
+    ];
+    final commercial = [
+      for (final (c, ring) in covers)
+        if (c == Cover.commercial) ring,
+    ];
+    // Mapped building centres in 50 m buckets, to tell sparse from mapped.
+    const bucket = 50.0;
+    final mapped = <int, int>{};
+    int key(double x, double z) =>
+        (x / bucket).floor() * 100003 + (z / bucket).floor();
+    for (final r in _buildingRings) {
+      var cx = 0.0, cz = 0.0;
+      for (final (x, z) in r) {
+        cx += x;
+        cz += z;
+      }
+      final k = key(cx / r.length, cz / r.length);
+      mapped[k] = (mapped[k] ?? 0) + 1;
+    }
+    bool sparse(double x, double z) {
+      var n = 0;
+      for (var dx = -1; dx <= 1; dx++) {
+        for (var dz = -1; dz <= 1; dz++) {
+          n += mapped[key(x + dx * bucket, z + dz * bucket)] ?? 0;
+        }
+      }
+      return n <= 2;
+    }
+
+    const streets = {
+      'primary',
+      'secondary',
+      'tertiary',
+      'residential',
+      'unclassified',
+      'living_street',
+      'service',
+      'primary_link',
+      'secondary_link',
+      'tertiary_link',
+    };
+    final rng = Rng(20261106);
+    var id = 1 << 40;
+    for (final r in _roadRuns) {
+      if (r.bridge || !streets.contains(r.kind)) continue;
+      final pts = _resample(r.pts, 2);
+      if (pts.length < 4) continue;
+      for (final side in [1.0, -1.0]) {
+        // Two rows: the street front, and a second row up or down the slope.
+        for (var row = 0; row < 2; row++) {
+          var k = 0;
+          while (k < pts.length - 1) {
+            final (x0, z0) = pts[k];
+            final (x1, z1) = pts[min(k + 1, pts.length - 1)];
+            final len = sqrt((x1 - x0) * (x1 - x0) + (z1 - z0) * (z1 - z0));
+            if (len < 1e-6) {
+              k++;
+              continue;
+            }
+            final tx = (x1 - x0) / len, tz = (z1 - z0) / len;
+            final nx = -tz * side, nz = tx * side;
+            final pick = rng.next();
+            final tall = pick > 0.75, low = pick < 0.3;
+            final w = tall ? 20 + rng.next() * 8 : 12 + rng.next() * 12;
+            final d = tall ? 18 + rng.next() * 8 : 10 + rng.next() * 6;
+            final setback = r.half + 4 + rng.next() * 3 + row * 26;
+            final ox = x0 + nx * setback, oz = z0 + nz * setback;
+            final ring = <P2>[
+              (ox, oz),
+              (ox + tx * w, oz + tz * w),
+              (ox + tx * w + nx * d, oz + tz * w + nz * d),
+              (ox + nx * d, oz + nz * d),
+            ];
+            final cx = ox + tx * w / 2 + nx * d / 2,
+                cz = oz + tz * w / 2 + nz * d / 2;
+            if (_free(ring, cx, cz, taken, green) && sparse(cx, cz)) {
+              final inCbd = commercial.any((c) => pointInRing((cx, cz), c));
+              // Homes stay under the 90 m glass-tower line: Chongqing's
+              // apartment towers are tiled concrete, not curtain wall.
+              final floors = low
+                  ? 6 + (rng.next() * 4).floor()
+                  : inCbd
+                  ? 28 + (rng.next() * 14).floor()
+                  : tall
+                  ? 22 + (rng.next() * 6).floor()
+                  : 12 + (rng.next() * 12).floor();
+              _building(homes, towers, ring, {
+                'building': inCbd ? 'commercial' : 'apartments',
+                'building:levels': '$floors',
+              }, id++);
+              _count('infill buildings');
+              taken.markRing(ring, pad: 4 + rng.next() * 4);
+              k += ((w + 6) / 2).ceil();
+              continue;
+            }
+            k += 2;
+          }
+        }
+      }
+    }
+  }
+
+  /// Whether a generated footprint lands on open, dry, buildable ground.
+  bool _free(
+    List<P2> ring,
+    double cx,
+    double cz,
+    Mask taken,
+    List<List<P2>> green,
+  ) {
+    if (!_inside(cx, cz)) return false;
+    var lo = double.infinity, hi = -double.infinity;
+    final samples = <P2>[(cx, cz), ...ring];
+    for (var a = 0; a < 4; a++) {
+      final (ax, az) = ring[a];
+      final (bx, bz) = ring[(a + 1) % 4];
+      samples.add(((ax + bx) / 2, (az + bz) / 2));
+      samples.add(((ax + cx) / 2, (az + cz) / 2));
+    }
+    for (final (x, z) in samples) {
+      if (!_inside(x, z) || taken.at(x, z)) return false;
+      final h = terrain.heightAt(x, z);
+      if (h < riverLevel + 4) return false;
+      lo = min(lo, h);
+      hi = max(hi, h);
+    }
+    // Chongqing builds on steep ground, but not on cliffs.
+    if (hi - lo > 14) return false;
+    return !green.any((g) => pointInRing((cx, cz), g));
   }
 
   // ---- terrain ----

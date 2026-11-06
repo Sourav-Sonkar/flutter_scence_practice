@@ -423,3 +423,28 @@ Chrome, Medium, Painted night: about 29-31 FPS in the diorama, 36-39 in the dron
   grid (2026-11-06): same banks in an A/B at the Pedestrian street view,
   +4.9 MB of assets, so reverted. Grid size is not the cause; a real fix
   would be retaining walls or stepped terraces along such streets.
+
+## The other banks, and filling in the city (2026-11-06)
+- Districts 3-5, sharing exact edges with yuzhong_tip:
+  - `nanan_riverside` (106.590-106.606, 29.540-29.568): Shangxin Street, the
+    Yangtze cableway's south station (it sat on the old east edge with no
+    city around it), and the Nan'an hillside.
+  - `nanbin_road` (106.570-106.590, 29.540-29.552): the south bank opposite
+    Yuzhong.
+  - `jiangbeizui` (106.570-106.590, 29.568-29.580): Grand Theatre, Jiangbei
+    CBD, the north Raffles City towers.
+  - The plan's "Hongyadong riverside" and "Jiefangbei west" were already
+    inside yuzhong_tip / jialing_riverside.
+- Infill (`_infill` in the city builder): OSM maps ~100 buildings in each new
+  district, so streets with no mapped buildings within ~75 m get generated
+  blocks set back from the road and facing it, two rows deep: 30% 6-9 floor
+  walk-ups, mid-rise 12-23, towers 22-27 (kept under the 90 m glass line so
+  they stay concrete), 28-41 floor glass in commercial zones. Kept off mapped
+  buildings, roads, parks/woods/grass, the river, cliffs (>14 m fall across a
+  footprint) and a 14 m corridor under the monorail and cableway.
+  ~4,600 blocks in all; well-mapped Yuzhong gets ~230.
+- Square chips need an English name (a Chinese-only plaza chip appeared).
+- Assets: five districts 30.8 MB (was 17.3 MB for two).
+- Chrome, Realistic, default diorama (settled): 39 FPS with infill, 43-45
+  without. Cableway ride: 40-44 FPS. Readings in the first ~15 s after load
+  are low (18-25) and must not be used.

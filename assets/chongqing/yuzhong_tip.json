@@ -147,73 +147,73 @@
    "name": "buildings",
    "bounds": [
     -993.6072114634751,
-    192.01008296559573,
-    -794.9717730002902,
-    232.0834362542926,
-    363.79508971787084,
+    164.8622367246049,
+    -881.2305456748782,
+    240.0742427791804,
+    381.94386192487053,
     332.2969848000537
    ],
-   "vertexCount": 10634,
-   "indexCount": 17862,
+   "vertexCount": 12356,
+   "indexCount": 20430,
    "indexBits": 16,
    "positions": 436840,
-   "colors": 564448,
-   "uvs": 606984,
-   "indices": 692056
+   "colors": 585112,
+   "uvs": 634536,
+   "indices": 733384
   },
   {
    "name": "buildings",
    "bounds": [
     -973.4277271037706,
-    178.93394342449136,
+    164.37342037179977,
     296.26091820005473,
     140.61730896577993,
     359.37847429991217,
     894.1566509997173
    ],
-   "vertexCount": 5122,
-   "indexCount": 8478,
+   "vertexCount": 5942,
+   "indexCount": 9696,
    "indexBits": 16,
-   "positions": 727780,
-   "colors": 789244,
-   "uvs": 809732,
-   "indices": 850708
+   "positions": 774244,
+   "colors": 845548,
+   "uvs": 869316,
+   "indices": 916852
   },
   {
    "name": "buildings",
    "bounds": [
-    228.50070630622918,
-    191.31604363830502,
-    -799.7927994000605,
-    485.7600827413836,
+    218.83104846889822,
+    164.56632883153117,
+    -882.4136341278222,
+    966.2601541055681,
     315.3070502145911,
-    33.24960180004154
+    327.58344955231473
    ],
-   "vertexCount": 1925,
-   "indexCount": 3081,
+   "vertexCount": 2733,
+   "indexCount": 4287,
    "indexBits": 16,
-   "positions": 867664,
-   "colors": 890764,
-   "uvs": 898464,
-   "indices": 913864
+   "positions": 936244,
+   "colors": 969040,
+   "uvs": 979972,
+   "indices": 1001836
   },
   {
    "name": "buildings",
    "bounds": [
-    923.6955621916451,
-    219.07027221655616,
-    470.3265089996954,
+    618.4842936338196,
+    164.2549579350749,
+    303.6536611220725,
     972.3625911729678,
     330.1901221445111,
-    808.5834323998653
+    883.3505929826935
    ],
-   "vertexCount": 115,
-   "indexCount": 177,
+   "vertexCount": 1369,
+   "indexCount": 2055,
    "indexBits": 16,
-   "positions": 920028,
-   "colors": 921408,
-   "uvs": 921868,
-   "indices": 922788
+   "positions": 1010412,
+   "colors": 1026840,
+   "uvs": 1032316,
+   "indices": 1043268
   },
   {
    "name": "towers",
@@ -228,10 +228,10 @@
    "vertexCount": 31,
    "indexCount": 45,
    "indexBits": 16,
-   "positions": 923144,
-   "colors": 923516,
-   "uvs": 923640,
-   "indices": 923888
+   "positions": 1047380,
+   "colors": 1047752,
+   "uvs": 1047876,
+   "indices": 1048124
   },
   {
    "name": "towers",
@@ -246,10 +246,10 @@
    "vertexCount": 31,
    "indexCount": 45,
    "indexBits": 16,
-   "positions": 923980,
-   "colors": 924352,
-   "uvs": 924476,
-   "indices": 924724
+   "positions": 1048216,
+   "colors": 1048588,
+   "uvs": 1048712,
+   "indices": 1048960
   },
   {
    "name": "towers",
@@ -264,28 +264,28 @@
    "vertexCount": 4661,
    "indexCount": 7851,
    "indexBits": 16,
-   "positions": 924816,
-   "colors": 980748,
-   "uvs": 999392,
-   "indices": 1036680
+   "positions": 1049052,
+   "colors": 1104984,
+   "uvs": 1123628,
+   "indices": 1160916
   },
   {
    "name": "towers",
    "bounds": [
-    -946.0440506290712,
+    -966.3493602213698,
     183.23962954304383,
     308.5567469999664,
     122.1614082025923,
     391.6178427003771,
-    862.2781667999852
+    867.7290907307456
    ],
-   "vertexCount": 1775,
-   "indexCount": 2985,
+   "vertexCount": 1835,
+   "indexCount": 3075,
    "indexBits": 16,
-   "positions": 1052384,
-   "colors": 1073684,
-   "uvs": 1080784,
-   "indices": 1094984
+   "positions": 1176620,
+   "colors": 1198640,
+   "uvs": 1205980,
+   "indices": 1220660
   },
   {
    "name": "towers",
@@ -300,10 +300,10 @@
    "vertexCount": 98,
    "indexCount": 174,
    "indexBits": 16,
-   "positions": 1100956,
-   "colors": 1102132,
-   "uvs": 1102524,
-   "indices": 1103308
+   "positions": 1226812,
+   "colors": 1227988,
+   "uvs": 1228380,
+   "indices": 1229164
   },
   {
    "name": "towers",
@@ -318,10 +318,10 @@
    "vertexCount": 933,
    "indexCount": 1617,
    "indexBits": 16,
-   "positions": 1103656,
-   "colors": 1114852,
-   "uvs": 1118584,
-   "indices": 1126048
+   "positions": 1229512,
+   "colors": 1240708,
+   "uvs": 1244440,
+   "indices": 1251904
   },
   {
    "name": "towers",
@@ -336,10 +336,10 @@
    "vertexCount": 20,
    "indexCount": 30,
    "indexBits": 16,
-   "positions": 1129284,
-   "colors": 1129524,
-   "uvs": 1129604,
-   "indices": 1129764
+   "positions": 1255140,
+   "colors": 1255380,
+   "uvs": 1255460,
+   "indices": 1255620
   },
   {
    "name": "roads",
@@ -354,9 +354,9 @@
    "vertexCount": 34,
    "indexCount": 42,
    "indexBits": 16,
-   "positions": 1129824,
-   "colors": 1130232,
-   "indices": 1130368
+   "positions": 1255680,
+   "colors": 1256088,
+   "indices": 1256224
   },
   {
    "name": "roads",
@@ -371,9 +371,9 @@
    "vertexCount": 31,
    "indexCount": 39,
    "indexBits": 16,
-   "positions": 1130452,
-   "colors": 1130824,
-   "indices": 1130948
+   "positions": 1256308,
+   "colors": 1256680,
+   "indices": 1256804
   },
   {
    "name": "roads",
@@ -388,9 +388,9 @@
    "vertexCount": 25,
    "indexCount": 27,
    "indexBits": 16,
-   "positions": 1131028,
-   "colors": 1131328,
-   "indices": 1131428
+   "positions": 1256884,
+   "colors": 1257184,
+   "indices": 1257284
   },
   {
    "name": "roads",
@@ -405,9 +405,9 @@
    "vertexCount": 21197,
    "indexCount": 61284,
    "indexBits": 16,
-   "positions": 1131484,
-   "colors": 1385848,
-   "indices": 1470636
+   "positions": 1257340,
+   "colors": 1511704,
+   "indices": 1596492
   },
   {
    "name": "roads",
@@ -422,9 +422,9 @@
    "vertexCount": 8784,
    "indexCount": 25455,
    "indexBits": 16,
-   "positions": 1593204,
-   "colors": 1698612,
-   "indices": 1733748
+   "positions": 1719060,
+   "colors": 1824468,
+   "indices": 1859604
   },
   {
    "name": "roads",
@@ -439,9 +439,9 @@
    "vertexCount": 31,
    "indexCount": 39,
    "indexBits": 16,
-   "positions": 1784660,
-   "colors": 1785032,
-   "indices": 1785156
+   "positions": 1910516,
+   "colors": 1910888,
+   "indices": 1911012
   },
   {
    "name": "roads",
@@ -456,9 +456,9 @@
    "vertexCount": 8964,
    "indexCount": 26157,
    "indexBits": 16,
-   "positions": 1785236,
-   "colors": 1892804,
-   "indices": 1928660
+   "positions": 1911092,
+   "colors": 2018660,
+   "indices": 2054516
   },
   {
    "name": "roads",
@@ -473,9 +473,9 @@
    "vertexCount": 914,
    "indexCount": 2691,
    "indexBits": 16,
-   "positions": 1980976,
-   "colors": 1991944,
-   "indices": 1995600
+   "positions": 2106832,
+   "colors": 2117800,
+   "indices": 2121456
   },
   {
    "name": "structures",
@@ -490,9 +490,9 @@
    "vertexCount": 36,
    "indexCount": 48,
    "indexBits": 16,
-   "positions": 2000984,
-   "colors": 2001416,
-   "indices": 2001560
+   "positions": 2126840,
+   "colors": 2127272,
+   "indices": 2127416
   },
   {
    "name": "structures",
@@ -507,9 +507,9 @@
    "vertexCount": 12253,
    "indexCount": 32283,
    "indexBits": 16,
-   "positions": 2001656,
-   "colors": 2148692,
-   "indices": 2197704
+   "positions": 2127512,
+   "colors": 2274548,
+   "indices": 2323560
   },
   {
    "name": "structures",
@@ -524,9 +524,9 @@
    "vertexCount": 381,
    "indexCount": 1071,
    "indexBits": 16,
-   "positions": 2262272,
-   "colors": 2266844,
-   "indices": 2268368
+   "positions": 2388128,
+   "colors": 2392700,
+   "indices": 2394224
   },
   {
    "name": "structures",
@@ -541,9 +541,9 @@
    "vertexCount": 8029,
    "indexCount": 21033,
    "indexBits": 16,
-   "positions": 2270512,
-   "colors": 2366860,
-   "indices": 2398976
+   "positions": 2396368,
+   "colors": 2492716,
+   "indices": 2524832
   },
   {
    "name": "structures",
@@ -558,43 +558,43 @@
    "vertexCount": 201,
    "indexCount": 519,
    "indexBits": 16,
-   "positions": 2441044,
-   "colors": 2443456,
-   "indices": 2444260
+   "positions": 2566900,
+   "colors": 2569312,
+   "indices": 2570116
   },
   {
    "name": "lamplight",
    "bounds": [
     -1024.6232343752731,
-    269.9555518279367,
-    -230.00243455922651,
-    -965.73311678789,
+    223.22020041878594,
+    -484.1968910070041,
+    -964.3249662299542,
     280.07898536408277,
-    152.8595121062425
+    224.68078969861992
    ],
-   "vertexCount": 97,
-   "indexCount": 231,
+   "vertexCount": 116,
+   "indexCount": 255,
    "indexBits": 16,
-   "positions": 2445300,
-   "colors": 2446464,
-   "indices": 2446852
+   "positions": 2571156,
+   "colors": 2572548,
+   "indices": 2573012
   },
   {
    "name": "lamplight",
    "bounds": [
     -981.9291840965947,
-    232.28328063580415,
+    212.70930464908614,
     344.6847935316153,
-    -964.2194603146821,
-    258.72340259353837,
-    610.4285375174117
+    -962.7534227139944,
+    262.8273573503516,
+    753.9336990614081
    ],
-   "vertexCount": 46,
-   "indexCount": 78,
+   "vertexCount": 63,
+   "indexCount": 105,
    "indexBits": 16,
-   "positions": 2447316,
-   "colors": 2447868,
-   "indices": 2448052
+   "positions": 2573524,
+   "colors": 2574280,
+   "indices": 2574532
   },
   {
    "name": "lamplight",
@@ -609,94 +609,94 @@
    "vertexCount": 50,
    "indexCount": 96,
    "indexBits": 16,
-   "positions": 2448208,
-   "colors": 2448808,
-   "indices": 2449008
+   "positions": 2574744,
+   "colors": 2575344,
+   "indices": 2575544
   },
   {
    "name": "lamplight",
    "bounds": [
-    -971.2452562528757,
-    174.24609637656167,
-    -889.3141034441693,
+    -972.9704033897838,
+    161.04999999999998,
+    -889.7155718194447,
     235.6612438771642,
     340.20797838205795,
     321.56048074261804
    ],
-   "vertexCount": 37630,
-   "indexCount": 109932,
+   "vertexCount": 40168,
+   "indexCount": 115656,
    "indexBits": 16,
-   "positions": 2449200,
-   "colors": 2900760,
-   "indices": 3051280
+   "positions": 2575736,
+   "colors": 3057752,
+   "indices": 3218424
   },
   {
    "name": "lamplight",
    "bounds": [
-    -973.0208221533591,
-    170.84943725392827,
+    -975.5752624647018,
+    163.79317349022514,
     308.877811964794,
     185.03289261048906,
     299.15864279528466,
     902.170171697183
    ],
-   "vertexCount": 14532,
-   "indexCount": 40842,
+   "vertexCount": 15773,
+   "indexCount": 43638,
    "indexBits": 16,
-   "positions": 3271144,
-   "colors": 3445528,
-   "indices": 3503656
+   "positions": 3449736,
+   "colors": 3639012,
+   "indices": 3702104
   },
   {
    "name": "lamplight",
    "bounds": [
     448.8991751195287,
-    193.81695328147657,
+    169.31753630429378,
     -895.0442066914181,
-    497.39404438071574,
+    566.8071992323521,
     197.46942177454864,
     -877.668839000228
    ],
-   "vertexCount": 14,
-   "indexCount": 18,
+   "vertexCount": 19,
+   "indexCount": 24,
    "indexBits": 16,
-   "positions": 3585340,
-   "colors": 3585508,
-   "indices": 3585564
+   "positions": 3789380,
+   "colors": 3789608,
+   "indices": 3789684
   },
   {
    "name": "lamplight",
    "bounds": [
     224.62114235760632,
-    169.8119254905112,
+    161.04999999999998,
     -890.2704536468555,
     974.9154251224935,
     258.77868180498837,
     318.4760246142545
    ],
-   "vertexCount": 12353,
-   "indexCount": 39618,
+   "vertexCount": 13561,
+   "indexCount": 42366,
    "indexBits": 16,
-   "positions": 3585600,
-   "colors": 3733836,
-   "indices": 3783248
+   "positions": 3789732,
+   "colors": 3952464,
+   "indices": 4006708
   },
   {
    "name": "lamplight",
    "bounds": [
-    662.8048905036253,
-    168.4613748339567,
+    610.6322867043884,
+    161.04999999999998,
     312.3073909405436,
     980.7031055236866,
     262.21213603161044,
-    888.9148126007713
+    889.8488933611511
    ],
-   "vertexCount": 1547,
-   "indexCount": 5277,
+   "vertexCount": 3422,
+   "indexCount": 9540,
    "indexBits": 16,
-   "positions": 3862484,
-   "colors": 3881048,
-   "indices": 3887236
+   "positions": 4091440,
+   "colors": 4132504,
+   "indices": 4146192
   }
  ],
  "rides": [
@@ -1450,16 +1450,16 @@
   "lantern"
  ],
  "details": {
-  "offset": 3972796,
-  "count": 19081
+  "offset": 4249556,
+  "count": 20647
  },
  "walk": {
   "walls": {
-   "offset": 3897792,
-   "floats": 10552
+   "offset": 4165272,
+   "floats": 12872
   },
   "decks": {
-   "offset": 3940000,
+   "offset": 4216760,
    "floats": 8199
   }
  },
@@ -18228,38 +18228,39 @@
   "podium + tower buildings": 40,
   "rooftop helipad": 13,
   "rooftop mast": 14,
-  "rooftop acUnit": 1627,
+  "rooftop acUnit": 2444,
   "led crowns": 23,
   "cableway lines": 2,
   "bridges": 66,
   "piers": 206,
-  "rooftop stairHut": 388,
+  "rooftop stairHut": 606,
   "buildings (height from estimate)": 419,
-  "rooftop waterTank": 537,
-  "rooftop plant": 672,
-  "buildings (height from levels)": 63,
+  "rooftop waterTank": 887,
+  "rooftop plant": 1176,
+  "buildings (height from levels)": 295,
   "monorail tunnel pieces skipped": 5,
   "buildings outside district (skipped)": 12,
   "plaza areas": 5,
-  "plants treeHuangge": 2601,
-  "plants treeBanyan": 1007,
-  "plants treeCamphor": 1968,
-  "plants treeGinkgo": 998,
-  "plants shrub": 60,
+  "infill buildings": 232,
+  "plants treeHuangge": 2439,
+  "plants treeBanyan": 942,
+  "plants treeCamphor": 1886,
+  "plants treeGinkgo": 953,
+  "plants shrub": 46,
   "street lamps": 2373,
   "bridge planters": 910,
   "power poles": 945,
   "wire spans": 711,
-  "street life awningRed": 60,
-  "street life signRed": 62,
-  "street life laundryColour": 147,
-  "street life laundryLight": 141,
-  "street life awningTeal": 68,
-  "street life signBlue": 66,
-  "street life signYellow": 70,
-  "street life awningCream": 63,
-  "street life lantern": 1132,
-  "street life wire": 1003,
+  "street life awningRed": 84,
+  "street life signRed": 84,
+  "street life laundryColour": 185,
+  "street life laundryLight": 197,
+  "street life awningTeal": 89,
+  "street life signBlue": 84,
+  "street life signYellow": 85,
+  "street life awningCream": 79,
+  "street life lantern": 1046,
+  "street life wire": 924,
   "boat lanes": 4
  }
 }
