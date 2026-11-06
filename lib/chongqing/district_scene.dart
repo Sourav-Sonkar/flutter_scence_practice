@@ -8,6 +8,7 @@ import 'detail_chunks.dart';
 import 'movers.dart';
 import 'ride_vehicles.dart';
 import 'street_lamps.dart';
+import 'tree_shade.dart';
 
 /// Everything that belongs to one loaded district, under one node so the
 /// whole district can be shown or hidden at once: geometry tiles, detail
@@ -58,6 +59,7 @@ class DistrictScene {
           if (tile.kind == 'lamplight') tile.geometry,
       ],
     );
+    treeShade = TreeShade(data, root);
     movers = Movers(data);
     final ridesNode = Node(name: '$name rides');
     for (final ride in data.rides) {
@@ -96,6 +98,7 @@ class DistrictScene {
   late final LedCrowns crowns;
   late final StreetLamps lamps;
   late final Movers movers;
+  late final TreeShade treeShade;
   final List<RideVehicles> rides = [];
   final List<(Node, vm.Aabb3)> _farHidden = [];
   final List<(Node, String, Geometry)> _tiles = [];
@@ -133,6 +136,7 @@ class DistrictScene {
     required double time,
     required double night,
     required bool showCars,
+    required vm.Vector3 sun,
   }) {
     for (final r in rides) {
       r.update(dt);
@@ -149,6 +153,7 @@ class DistrictScene {
     lamps.update(time, night);
     crowns.update(time, night);
     vegetation.update(eye);
+    treeShade.update(sun);
     rooftops.update(eye);
   }
 }

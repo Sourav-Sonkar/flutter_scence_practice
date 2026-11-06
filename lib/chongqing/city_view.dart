@@ -13,6 +13,7 @@ import 'city_look.dart';
 import 'clouds.dart';
 import 'detail_chunks.dart';
 import 'district_scene.dart';
+import 'tree_shade.dart';
 import 'street_lamps.dart' show RainPainter;
 import 'facade_textures.dart';
 import 'joystick.dart';
@@ -374,6 +375,13 @@ class _CityViewState extends State<CityView> {
     _look.update(_sky, _hour.value);
     if (_painted) _paintedLook?.update(_sky, _hour.value);
     DetailChunks.setNightGlow(_sky.night);
+    // Tree shade: firm in sun, faint under cloud, mostly gone at night.
+    TreeShade.material.baseColorFactor = vm.Vector4(
+      0.03,
+      0.05,
+      0.1,
+      (_weather == Weather.clear ? 0.42 : 0.24) * (1 - 0.75 * _sky.night),
+    );
     _pushSkyParams();
   }
 
@@ -448,6 +456,7 @@ class _CityViewState extends State<CityView> {
         time: _clock.value,
         night: _sky.night,
         showCars: _mode != _Mode.diorama || _orbit.distance < 900,
+        sun: _sky.sun,
       );
     }
     // Tilt-shift is a diorama effect; riding, it would only smear the view.

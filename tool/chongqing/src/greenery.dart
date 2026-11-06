@@ -101,10 +101,10 @@ Cover? coverFor(Map<String, dynamic> tags) {
   Cover.park => (104, 150, 76),
   Cover.wood => (70, 118, 56),
   Cover.grass => (128, 168, 90),
-  Cover.residential => (186, 178, 160),
-  Cover.commercial => (176, 172, 168),
-  Cover.paved => (190, 184, 174),
-  Cover.construction => (176, 150, 116),
+  Cover.residential => (160, 152, 136),
+  Cover.commercial => (152, 148, 142),
+  Cover.paved => (166, 160, 150),
+  Cover.construction => (164, 138, 104),
 };
 
 /// Small deterministic random generator, so builds are reproducible.

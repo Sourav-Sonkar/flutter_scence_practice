@@ -1,4 +1,5 @@
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'geo.dart';
 import 'greenery.dart';
@@ -261,6 +262,7 @@ class CityBuilder {
   final List<_RoadRun> _roadRuns = [];
 
   CityBuild build(List<Map<String, dynamic>> elements) {
+    _levelStreets(elements);
     final covers = <(Cover, List<P2>)>[];
     final featured = <Map<String, Object>>[];
     final monorailLines = <List<P2>>[];
@@ -399,7 +401,13 @@ class CityBuilder {
         paved.markDisc(x, z, 12);
       }
     }
-    final ground = _terrainLayer(covers);
+    // Ground near buildings is paving, steps and retaining walls, however
+    // steep: the green-slope rule is for open hillsides and cliffs only.
+    final urban = Mask(terrain);
+    for (final r in _buildingRings) {
+      urban.markRing(r, pad: 14);
+    }
+    final ground = _terrainLayer(covers, urban);
     _vegetation(covers, built, paved);
     _powerLines(built);
     _streetLife(paved);
@@ -422,7 +430,64 @@ class CityBuilder {
 
   // ---- terrain ----
 
-  MeshLayer _terrainLayer(List<(Cover, List<P2>)> covers) {
+  /// The elevation data (about 5 m a pixel) can't resolve a narrow street
+  /// between tall blocks, so the ground beside a street could climb metres
+  /// within a few steps, leaving it in a trench. Level the ground across
+  /// each street to the street's own height, fading back to the natural
+  /// slope a few metres out: sidewalks and shopfronts at street level, and
+  /// on hills the stepped terraces Chongqing is built on. Runs before
+  /// anything is placed, so buildings, trees and lamps sit on the result.
+  void _levelStreets(List<Map<String, dynamic>> elements) {
+    final h = terrain.heights;
+    final original = Float64List.fromList(h);
+    // Per vertex: how far beyond the nearest street's edge it is, and that
+    // street's height there.
+    final beyond = Float64List(h.length)..fillRange(0, h.length, 1e9);
+    final target = Float64List(h.length);
+    // Metres beyond the edge. The grid is about 8 m, so the flat zone must
+    // reach past one cell or it barely moves a vertex.
+    const flat = 7.0, fade = 9.0;
+    for (final e in elements) {
+      final tags = (e['tags'] as Map?)?.cast<String, dynamic>() ?? const {};
+      if (!tags.containsKey('highway') || e['type'] != 'way') continue;
+      if (_isArea(e, tags) || _underground(tags) || _elevated(tags)) continue;
+      final style = roadStyle(tags);
+      if (style == null) continue;
+      final half = style.$1;
+      final line = _line(e);
+      if (line.length < 2) continue;
+      for (final (x, z) in _resample(line, 2)) {
+        final street = terrain.heightAt(x, z);
+        final reach = half + flat + fade;
+        final i0 = ((x - reach - terrain.minX) / terrain.spacing).floor();
+        final i1 = ((x + reach - terrain.minX) / terrain.spacing).ceil();
+        final j0 = ((z - reach - terrain.minZ) / terrain.spacingZ).floor();
+        final j1 = ((z + reach - terrain.minZ) / terrain.spacingZ).ceil();
+        // The outer ring stays as is, so neighbouring districts still meet.
+        for (var j = max(1, j0); j <= min(terrain.rows - 2, j1); j++) {
+          for (var i = max(1, i0); i <= min(terrain.cols - 2, i1); i++) {
+            final vx = terrain.minX + i * terrain.spacing;
+            final vz = terrain.minZ + j * terrain.spacingZ;
+            final d = sqrt((vx - x) * (vx - x) + (vz - z) * (vz - z)) - half;
+            final k = j * terrain.cols + i;
+            if (d < beyond[k]) {
+              beyond[k] = d;
+              target[k] = street;
+            }
+          }
+        }
+      }
+    }
+    for (var k = 0; k < h.length; k++) {
+      final d = beyond[k];
+      if (d >= flat + fade) continue;
+      final t = ((d - flat) / fade).clamp(0.0, 1.0);
+      final w = 1 - t * t * (3 - 2 * t);
+      h[k] = original[k] + (target[k] - original[k]) * w;
+    }
+  }
+
+  MeshLayer _terrainLayer(List<(Cover, List<P2>)> covers, Mask urban) {
     final layer = MeshLayer('terrain');
     for (var j = 0; j < terrain.rows; j++) {
       for (var i = 0; i < terrain.cols; i++) {
@@ -433,7 +498,7 @@ class CityBuilder {
         if (h - riverLevel >= 8) {
           // Green on steep unbuilt slopes, the way Chongqing's cliffs look.
           final slope = _slope(x, z);
-          if (slope > 0.3) {
+          if (slope > 0.3 && !urban.at(x, z)) {
             final t = ((slope - 0.3) / 0.4).clamp(0.0, 1.0);
             color = _mix(color, (82, 128, 62), t);
           }
@@ -720,11 +785,12 @@ class CityBuilder {
     if (above < 1) return (92, 84, 70); // riverbed under water
     if (above < 8) return (150, 138, 112); // muddy bank
     final t = ((above - 8) / 140).clamp(0.0, 1.0);
-    // Urban ground: warm grey lower down, a little greener up the hill.
+    // Urban ground: warm grey paving lower down, a little greener up the
+    // hill. Kept near real paving albedo so it holds colour in bright sun.
     return (
-      (150 - 30 * t).round(),
-      (146 - 12 * t).round(),
-      (134 - 30 * t).round(),
+      (140 - 26 * t).round(),
+      (134 - 8 * t).round(),
+      (122 - 24 * t).round(),
     );
   }
 

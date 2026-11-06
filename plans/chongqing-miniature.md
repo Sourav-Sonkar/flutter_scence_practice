@@ -404,3 +404,20 @@ Chrome, Medium, Painted night: about 29-31 FPS in the diorama, 36-39 in the dron
   sky fill 32%. CityLook: the Painted grade firms up toward midday
   (contrast 0.94 -> 1.12, saturation +0.12, brightness 1.06 -> 0.96).
 - Still pale: the beige/grey ground (part of "improve the city").
+
+## Tree shadows and street-level ground (done)
+- Tree shadows (lib/chongqing/tree_shade.dart): one soft dark oval per
+  tree/shrub, built at load from the tree details + terrain (no download
+  cost), draped on the ground, pushed and stretched away from the sun (capped
+  at 2.5 canopy radii). Split into 400 m tiles so off-screen ones cull; a
+  tile is re-placed (fresh mesh, one tile per frame) when the sun moves.
+  Works at every quality and in both styles; real cascaded tree shadows stay
+  High-only. A build-time version doubled the assets (27.9 MB) - don't.
+  A/B at noon, Painted diorama: 31-33 FPS with, 31-32 without.
+- Ground: no "steep slope = green" within 14 m of a building (that ground is
+  paving/steps); urban and cover colours darkened to real paving albedo.
+- Street levelling (_levelStreets): ground levelled across each street to
+  its height, flat 7 m past the edge, fading over 9 m (grid is ~8 m).
+  Still: uphill banks remain on cross-slope streets (Minzu Road postcard)
+  because one 8 m terrain cell ramps back to the hillside. A finer terrain
+  grid near streets is the real fix.
