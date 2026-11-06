@@ -379,3 +379,18 @@ Chrome, Medium, Painted night: about 29-31 FPS in the diorama, 36-39 in the dron
 ## Future ideas
 - The title (now always "Chongqing · Yuzhong") should follow the district the camera is in,
   updating as the drone or a ride crosses into another district. Requested 2026-11-05.
+
+## Night street light (done)
+- Car headlights/tail lights, LED crown strips and lamp heads were placed with
+  `Quaternion.rotated`, which in vector_math turns the opposite way to the
+  matrix the mesh is drawn with. Offsets now use `rot.asRotationMatrix()`.
+- Street lamps every 36 m (24 m on bridges), up from ~96 m.
+- New `lamplight` layer from the build tool, drawn blended by `StreetLamps`
+  and faded in with them (both styles):
+  - lamp pools: copies of the road surface around each lamp, +0.12 m, alpha
+    fading along the road and toward its edges, so they hug slopes and decks;
+  - building spill: a band draped on the terrain around each building base,
+    fading outward (towers wider/brighter, ~15% of buildings stay dark).
+- Vertex alpha is now kept when loading layers (was forced to 1).
+- Assets grew: yuzhong_tip 3.07 → 4.58 MB, jialing_riverside 9.16 → 12.67 MB.
+- Chrome caches the district .json/.bin too: re-fetch with `cache:'reload'`.

@@ -258,16 +258,7 @@ class CityBuilder {
   final List<List<P2>> _buildingRings = [];
   final List<(List<P2>, double)> _walls = [];
   final List<(List<P2>, double, double, bool, int)> _facades = [];
-  final List<
-    ({
-      List<P2> pts,
-      List<double> heights,
-      double half,
-      bool bridge,
-      String kind,
-    })
-  >
-  _roadRuns = [];
+  final List<_RoadRun> _roadRuns = [];
 
   CityBuild build(List<Map<String, dynamic>> elements) {
     final covers = <(Cover, List<P2>)>[];
@@ -412,8 +403,9 @@ class CityBuilder {
     _vegetation(covers, built, paved);
     _powerLines(built);
     _streetLife(paved);
+    _buildingGlow();
     return CityBuild(
-        [ground, homes, towers, roads, structures],
+        [ground, homes, towers, roads, structures, _lamplight],
         rides,
         landmarks.take(12).toList(),
         stats,
@@ -604,6 +596,7 @@ class CityBuilder {
       }.contains(r.kind);
       if (!major && !r.bridge) continue;
       final every = r.bridge ? 2 : 3; // samples are 4 m apart
+      var pooled = -1; // the sample whose light pool is already laid
       for (var k = 1; k < r.pts.length - 1; k += every) {
         var dx = r.pts[k + 1].$1 - r.pts[k - 1].$1,
             dz = r.pts[k + 1].$2 - r.pts[k - 1].$2;
@@ -629,9 +622,9 @@ class CityBuilder {
             ));
             _count('bridge planters');
           }
-          if (k % 8 == 4) {
+          if ((k ~/ every) % 3 == 1) {
             // A street lamp standing on the road edge (or bridge deck), its
-            // arm reaching over the road.
+            // arm reaching over the road: every 36 m (24 m on bridges).
             final off = r.half + (r.bridge ? -0.3 : 1.0);
             final x = r.pts[k].$1 - dz * off * side,
                 z = r.pts[k].$2 + dx * off * side;
@@ -649,6 +642,10 @@ class CityBuilder {
                 rot: atan2(-tz, tx),
               ));
               _count('street lamps');
+              if (pooled != k) {
+                pooled = k;
+                _lampPool(r, k);
+              }
             }
           }
           if (!r.bridge && k % 3 == 1) {
@@ -761,6 +758,131 @@ class CityBuilder {
 
   final List<Detail> _details = [];
   late MeshLayer _structures;
+
+  /// The warm light street lamps throw on the road at night: a copy of the
+  /// road surface around each lamp, lifted a little, whose vertex alpha
+  /// fades from the lamp outward along the road. Drawn blended at runtime.
+  final MeshLayer _lamplight = MeshLayer('lamplight');
+
+  /// Light spilling from lobbies, shopfronts and lower windows onto the
+  /// ground around each building: a band draped on the terrain around the
+  /// footprint, fading outward. Towers spill more than homes, and a few
+  /// buildings stay dark.
+  void _buildingGlow() {
+    final rng = Rng(31);
+    for (final (ring, base, top, glass, _) in _facades) {
+      if (top - base < 9 || ring.length < 3) continue;
+      final pick = rng.next();
+      if (pick < 0.15) continue; // closed for the night
+      final strength = (glass ? 0.85 : 0.5) * (0.6 + 0.4 * pick);
+      final width = glass ? 9.0 : 6.0;
+      // Outward is to the right of each edge on a clockwise (x right, z
+      // down) ring; flip for the other winding.
+      var area = 0.0;
+      for (var i = 0; i < ring.length; i++) {
+        final (ax, az) = ring[i];
+        final (bx, bz) = ring[(i + 1) % ring.length];
+        area += ax * bz - bx * az;
+      }
+      final sign = area > 0 ? -1.0 : 1.0;
+      (double, double) edgeOut(int i) {
+        final (ax, az) = ring[i];
+        final (bx, bz) = ring[(i + 1) % ring.length];
+        final dx = bx - ax, dz = bz - az;
+        final len = sqrt(dx * dx + dz * dz);
+        return len < 1e-6 ? (0, 0) : (-dz / len * sign, dx / len * sign);
+      }
+
+      // Each corner pushes out along the average of its two edges' normals.
+      final n = ring.length;
+      final out = [
+        for (var i = 0; i < n; i++)
+          () {
+            final (ax, az) = edgeOut((i - 1 + n) % n);
+            final (bx, bz) = edgeOut(i);
+            var x = ax + bx, z = az + bz;
+            final len = sqrt(x * x + z * z);
+            if (len < 1e-6) return (bx, bz);
+            x /= len;
+            z /= len;
+            // Keep the band its full width at sharp corners, within reason.
+            final c = max(0.5, x * bx + z * bz);
+            return (x / c, z / c);
+          }(),
+      ];
+      double ground(double x, double z) =>
+          max(terrain.heightAt(x, z), riverLevel) + 0.35;
+      int vertex(double x, double z, int alpha) {
+        final v = _lamplight.vertex(x, ground(x, z), z, (255, 255, 255));
+        _lamplight.colors[v * 4 + 3] = alpha;
+        return v;
+      }
+
+      final inner = (255 * strength).round();
+      for (var i = 0; i < n; i++) {
+        final (ax, az) = ring[i];
+        final (bx, bz) = ring[(i + 1) % n];
+        final (oax, oaz) = out[i];
+        final (obx, obz) = out[(i + 1) % n];
+        final len = sqrt((bx - ax) * (bx - ax) + (bz - az) * (bz - az));
+        // Short pieces, so the band follows the terrain between corners.
+        final steps = max(1, (len / 6).ceil());
+        int? prevIn, prevOut;
+        for (var s = 0; s <= steps; s++) {
+          final t = s / steps;
+          final x = ax + (bx - ax) * t, z = az + (bz - az) * t;
+          final ox = oax + (obx - oax) * t, oz = oaz + (obz - oaz) * t;
+          final a = vertex(x, z, inner);
+          final b = vertex(x + ox * width, z + oz * width, 0);
+          if (prevIn != null) {
+            _lamplight.quad(prevIn, a, b, prevOut!, (0, 1, 0));
+          }
+          prevIn = a;
+          prevOut = b;
+        }
+      }
+    }
+  }
+
+  /// Lays the light pool of the lamps at sample [k] of road run [r]. It
+  /// follows the road's own surface, so it hugs slopes and bridge decks.
+  void _lampPool(_RoadRun r, int k) {
+    // Samples (4 m) each way: pools reach about 20 m, so lamps 36 m apart
+    // leave dimmer road between them.
+    final span = r.bridge ? 4 : 5;
+    int? prevL, prevM, prevR;
+    for (var i = max(0, k - span); i <= min(r.pts.length - 1, k + span); i++) {
+      final a = r.pts[max(0, i - 1)], b = r.pts[min(r.pts.length - 1, i + 1)];
+      var dx = b.$1 - a.$1, dz = b.$2 - a.$2;
+      final len = sqrt(dx * dx + dz * dz);
+      if (len < 1e-6) continue;
+      dx /= len;
+      dz /= len;
+      final f = 1 - (i - k).abs() / span;
+      final alpha = (255 * f * f * (3 - 2 * f)).round();
+      final (x, z) = r.pts[i];
+      final y = r.heights[i] + 0.12;
+      final half = r.half + 0.3;
+      // Brightest down the middle of the road, softer at its edges.
+      int vertex(double vx, double vz, double edge) {
+        final v = _lamplight.vertex(vx, y, vz, (255, 255, 255));
+        _lamplight.colors[v * 4 + 3] = (alpha * edge).round();
+        return v;
+      }
+
+      final l = vertex(x - dz * half, z + dx * half, 0.35);
+      final m = vertex(x, z, 1);
+      final rr = vertex(x + dz * half, z - dx * half, 0.35);
+      if (prevL != null) {
+        _lamplight
+          ..quad(prevL, prevM!, m, l, (0, 1, 0))
+          ..quad(prevM, prevR!, rr, m, (0, 1, 0));
+      }
+      prevL = l;
+      prevM = m;
+      prevR = rr;
+    }
+  }
 
   static bool _isGreatHall(Map<String, dynamic> tags) {
     final n = '${tags['name'] ?? ''} ${tags['name:en'] ?? ''}';
@@ -1693,3 +1815,13 @@ class CityBuilder {
     ];
   }
 }
+
+/// One stretch of road inside the district: its centreline samples (4 m
+/// apart), surface heights and half width.
+typedef _RoadRun = ({
+  List<P2> pts,
+  List<double> heights,
+  double half,
+  bool bridge,
+  String kind,
+});

@@ -17,6 +17,7 @@ class DistrictScene {
   DistrictScene(this.name, CityData data, Map<String, Material> materials) {
     root = Node(name: 'district $name');
     for (final tile in data.layers) {
+      if (tile.kind == 'lamplight') continue; // drawn by the street lamps
       final node =
           Node(
               name: '$name/${tile.kind}',
@@ -52,6 +53,10 @@ class DistrictScene {
     crowns = LedCrowns(data.details.where((d) => d.type == 'crown').toList());
     lamps = StreetLamps(
       data.details.where((d) => d.type == 'streetLamp').toList(),
+      [
+        for (final tile in data.layers)
+          if (tile.kind == 'lamplight') tile.geometry,
+      ],
     );
     movers = Movers(data);
     final ridesNode = Node(name: '$name rides');

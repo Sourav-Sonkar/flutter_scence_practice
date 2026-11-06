@@ -13,7 +13,9 @@ class StreetLamps {
   /// [lamps] are the build tool's street lamp details: pole bases at the
   /// road edge, rotated so local +x is the arm pointing over the road. The
   /// head sits at the arm's tip.
-  StreetLamps(List<Detail> lamps) {
+  /// [pools] are the build tool's light pools on the road under the lamps
+  /// (the 'lamplight' layer), shown with the lamps.
+  StreetLamps(List<Detail> lamps, List<Geometry> pools) {
     final rnd = Random(9);
     final geometry = CuboidGeometry(vm.Vector3(0.8, 0.2, 0.4));
     InstancedMesh mesh(vm.Vector4 c) => InstancedMesh(
@@ -46,10 +48,16 @@ class StreetLamps {
           ..addComponent(InstancedMeshComponent(m)),
       );
     }
+    for (final g in pools) {
+      root.add(Node(name: 'lamp light', mesh: Mesh(g, _pool)));
+    }
     root
       ..castsShadows = false
       ..visible = false;
   }
+
+  /// Warm light the lamps throw on the road, blended over the asphalt.
+  final UnlitMaterial _pool = UnlitMaterial()..alphaMode = AlphaMode.blend;
 
   final Node root = Node(name: 'street lamps');
   late final InstancedMesh _flicker;
@@ -60,6 +68,7 @@ class StreetLamps {
     final on = level > 0.05;
     if (root.visible != on) root.visible = on;
     if (!on) return;
+    _pool.baseColorFactor = vm.Vector4(1.0, 0.55, 0.2, 0.26 * level);
     for (var i = 0; i < _phase.length; i++) {
       final ph = _phase[i];
       // Mostly on, with irregular quick dropouts.

@@ -151,8 +151,11 @@ class CityData {
       final srgb = bytes.buffer.asUint8List(l['colors'] as int, n * 4);
       final colors = Float32List(n * 4);
       for (var i = 0; i < n * 4; i++) {
-        // Stored as sRGB bytes; the shader wants linear.
-        colors[i] = i % 4 == 3 ? 1.0 : pow(srgb[i] / 255, 2.2).toDouble();
+        // Stored as sRGB bytes; the shader wants linear. Alpha is linear
+        // (opaque everywhere except the lamp light pools, which fade out).
+        colors[i] = i % 4 == 3
+            ? srgb[i] / 255
+            : pow(srgb[i] / 255, 2.2).toDouble();
       }
       final grid = l['grid'] as Map<String, dynamic>?;
       final b = (l['bounds'] as List?)?.cast<num>();
