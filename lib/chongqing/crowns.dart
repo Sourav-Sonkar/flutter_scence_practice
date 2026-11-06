@@ -29,7 +29,11 @@ class LedCrowns {
         (vm.Vector3(-hx, 0, 0), vm.Vector3(t, c.size.y, c.size.z)),
       ]) {
         _mesh.addInstance(
-          vm.Matrix4.compose(centre + rot.rotated(offset), rot, size),
+          vm.Matrix4.compose(
+            centre + rot.asRotationMatrix().transformed(offset),
+            rot,
+            size,
+          ),
         );
       }
       _phase.add(rnd.nextDouble() * 2 * pi);

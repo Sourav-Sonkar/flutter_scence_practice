@@ -150,7 +150,7 @@ class DetailChunks {
     return vm.Matrix4.compose(
       d.position +
           vm.Vector3(0, d.size.y * part.lift, 0) +
-          rot.rotated(vm.Vector3(part.side, 0, 0)),
+          rot.asRotationMatrix().transformed(vm.Vector3(part.side, 0, 0)),
       rot,
       size,
     );

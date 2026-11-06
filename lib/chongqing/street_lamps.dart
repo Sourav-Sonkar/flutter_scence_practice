@@ -26,7 +26,8 @@ class StreetLamps {
     for (final lamp in lamps) {
       final rot = vm.Quaternion.axisAngle(vm.Vector3(0, 1, 0), lamp.rotation);
       final m = vm.Matrix4.compose(
-        lamp.position + rot.rotated(vm.Vector3(2.0, 7.75, 0)),
+        lamp.position +
+            rot.asRotationMatrix().transformed(vm.Vector3(2.0, 7.75, 0)),
         rot,
         vm.Vector3.all(1),
       );

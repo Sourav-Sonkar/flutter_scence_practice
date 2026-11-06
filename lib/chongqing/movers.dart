@@ -48,7 +48,9 @@ class _Fleet {
           final right = vm.Vector3(-f.z, 0, f.x);
           final heading = atan2(f.x, f.z);
           final rot = vm.Quaternion.axisAngle(vm.Vector3(0, 1, 0), heading);
-          final local = rot.rotated(offset);
+          // Not rot.rotated(): vector_math turns vectors the opposite way to the
+          // matrix the mesh is drawn with, which put lights on the car sides.
+          final local = rot.asRotationMatrix().transformed(offset);
           list[i].setFromTranslationRotationScale(
             p + right * m.side + vm.Vector3(0, lift, 0) + local,
             rot,
