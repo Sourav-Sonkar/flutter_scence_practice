@@ -8,11 +8,15 @@ import 'package:vector_math/vector_math.dart' as vm;
 
 /// A named place the diorama camera can jump to.
 class Landmark {
-  Landmark(this.name, this.top, this.ground, this.height);
+  Landmark(this.name, this.top, this.ground, this.height, {this.place = false});
   final String name;
   final vm.Vector3 top;
   final double ground;
   final double height;
+
+  /// A famous place (a square, street, park, complex) rather than one
+  /// building: its chip shows no height.
+  final bool place;
 }
 
 /// A path the camera can ride (cableway, monorail), sampled in metres.
@@ -60,6 +64,8 @@ class CityData {
     this.walk,
     this.traffic,
     this.boatLanes,
+    this.walkways,
+    this.pavements,
     this.details,
     this.title,
     this.attribution,
@@ -83,6 +89,8 @@ class CityData {
   final List<Detail> details;
   final List<RidePath> traffic; // drivable road centre lines
   final List<RidePath> boatLanes;
+  final List<RidePath> walkways; // footpaths, pedestrian streets, stairs
+  final List<RidePath> pavements; // along ordinary streets
 
   /// Ground, walls and bridge decks for the walker.
   final WalkData walk;
@@ -235,6 +243,8 @@ class CityData {
       walk,
       paths('traffic', 'road'),
       paths('boatLanes', 'river'),
+      paths('walkways', 'walk'),
+      paths('pavements', 'walk'),
       details,
       meta['title'] as String,
       meta['attribution'] as String,
@@ -305,6 +315,7 @@ class CityIndex {
     final landmarks = <Landmark>[];
     double d(Object? v) => (v as num).toDouble();
     final featured = <Landmark>[], towers = <(double, Landmark)>[];
+    final places = <(int, Landmark)>[];
     for (final name in ds.keys) {
       final b = ds[name]['bounds'] as Map<String, dynamic>;
       districts[name] = vm.Aabb2.minMax(
@@ -318,19 +329,25 @@ class CityIndex {
           vm.Vector3(d(l['x']), d(l['y']), d(l['z'])),
           d(l['ground']),
           d(l['height']),
+          place: l['place'] == true,
         );
-        if (l['featured'] == true) {
+        if (l['place'] == true) {
+          places.add(((l['rank'] as num).toInt(), lm));
+        } else if (l['featured'] == true) {
           featured.add(lm);
         } else {
           towers.add((lm.height, lm));
         }
       }
     }
-    // Famous places first, then the tallest named towers.
+    // Famous places first, then other featured sights, then the tallest
+    // named towers.
+    places.sort((a, b) => a.$1.compareTo(b.$1));
     towers.sort((a, b) => b.$1.compareTo(a.$1));
     landmarks
+      ..addAll(places.map((p) => p.$2))
       ..addAll(featured)
-      ..addAll(towers.map((t) => t.$2));
+      ..addAll(towers.take(8).map((t) => t.$2));
     final bounds = vm.Aabb2.copy(districts.values.first);
     for (final b in districts.values.skip(1)) {
       bounds.hull(b);

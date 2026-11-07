@@ -149,7 +149,7 @@ class DistrictScene {
       final show = dx * dx + dz * dz < far2;
       if (node.visible != show) node.visible = show;
     }
-    movers.update(dt, showCars: showCars, night: night > 0.5);
+    movers.update(dt, eye, showCars: showCars, night: night > 0.5);
     lamps.update(time, night);
     crowns.update(time, night);
     vegetation.update(eye);

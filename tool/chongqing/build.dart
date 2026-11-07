@@ -259,6 +259,18 @@ void main(List<String> args) {
           for (final (x, y, z) in line) [_r1(x), _r1(y), _r1(z)],
         ],
     ],
+    'walkways': [
+      for (final line in city.walkways)
+        [
+          for (final (x, y, z) in line) [_r1(x), _r1(y), _r1(z)],
+        ],
+    ],
+    'pavements': [
+      for (final line in city.pavements)
+        [
+          for (final (x, y, z) in line) [_r1(x), _r1(y), _r1(z)],
+        ],
+    ],
     'stats': city.stats,
   };
   File('${out.path}/$name.json')

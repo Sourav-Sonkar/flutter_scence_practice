@@ -68,9 +68,13 @@ class CityBuild {
     this.details,
     this.traffic,
     this.boatLanes,
+    this.walkways,
+    this.pavements,
   );
   final List<List<V3>> traffic; // drivable road centre lines, for cars
   final List<List<V3>> boatLanes; // lanes on the rivers, for boats
+  final List<List<V3>> walkways; // footpaths, pedestrian streets, stairs
+  final List<List<V3>> pavements; // along ordinary streets
 
   /// For walking: building footprints with their roof height (walls), and
   /// bridge decks (walkable surfaces above the terrain).
@@ -367,10 +371,15 @@ class CityBuilder {
         (l) => blockLabel.hasMatch(l['name'] as String) || l['en'] != true,
       )
       ..sort((a, b) => (b['height'] as num).compareTo(a['height'] as num));
+    // Parts of a complex ("Tower 3 North") mean nothing on a chip; the
+    // complex itself is a famous place.
+    landmarks.removeWhere(
+      (l) => RegExp(r'^Tower \d').hasMatch(l['name'] as String),
+    );
     for (final f in featured) {
       f['featured'] = true;
     }
-    landmarks.insertAll(0, featured);
+    landmarks.insertAll(0, [..._famousPlaces(elements), ...featured]);
     // The track is built after all roads so it can clear road bridges.
     for (final line in monorailLines) {
       final track = _monorail(structures, line);
@@ -417,6 +426,7 @@ class CityBuilder {
     _powerLines(built);
     _streetLife(paved);
     _buildingGlow();
+    final (walkways, pavements) = _walkways();
     return CityBuild(
         [ground, homes, towers, roads, structures, _lamplight],
         rides,
@@ -425,12 +435,71 @@ class CityBuilder {
         _details,
         _trafficLines(),
         _boatLanes(rivers),
+        walkways,
+        pavements,
       )
       ..walls = _walls
       ..decks = [
         for (final r in _roadRuns)
           if (r.bridge) (pts: r.pts, heights: r.heights, half: r.half),
       ];
+  }
+
+  /// Chips for [famousPlaces] whose map feature lies in this district. The
+  /// framing height is the tallest building inside its outline (Raffles
+  /// City's towers), or a low default for squares, streets and parks.
+  List<Map<String, Object>> _famousPlaces(List<Map<String, dynamic>> elements) {
+    final out = <Map<String, Object>>[];
+    for (final (rank, (title, osmName)) in famousPlaces.indexed) {
+      for (final e in elements) {
+        final tags = (e['tags'] as Map?)?.cast<String, dynamic>() ?? const {};
+        if (tags['name'] != osmName) continue;
+        final pts = e['type'] == 'node'
+            ? [
+                proj.toLocal(
+                  (e['lat'] as num).toDouble(),
+                  (e['lon'] as num).toDouble(),
+                ),
+              ]
+            : _line(e);
+        if (pts.isEmpty) continue;
+        var cx = 0.0, cz = 0.0;
+        for (final (x, z) in pts) {
+          cx += x;
+          cz += z;
+        }
+        cx /= pts.length;
+        cz /= pts.length;
+        if (!_inside(cx, cz)) break;
+        final ground = max(terrain.heightAt(cx, cz), riverLevel);
+        // Frame the buildings standing inside the place's own outline.
+        var height = 40.0;
+        if (pts.length >= 4) {
+          for (final (ring, top) in _walls) {
+            var wx = 0.0, wz = 0.0;
+            for (final (x, z) in ring) {
+              wx += x;
+              wz += z;
+            }
+            if (pointInRing((wx / ring.length, wz / ring.length), pts)) {
+              height = max(height, top - ground);
+            }
+          }
+        }
+        out.add({
+          'name': title,
+          'x': cx,
+          'y': ground + height,
+          'z': cz,
+          'ground': ground,
+          'height': height,
+          'place': true,
+          'rank': rank,
+        });
+        break;
+      }
+    }
+    return out;
   }
 
   // ---- infill ----
@@ -914,6 +983,52 @@ class CityBuilder {
             (r.pts[k].$1, r.heights[k], r.pts[k].$2),
         ],
   ];
+
+  /// Where people walk: footpaths, pedestrian streets and stairs down their
+  /// middle, and (second) a pavement along each side of ordinary streets.
+  (List<List<V3>>, List<List<V3>>) _walkways() {
+    const paths = {'pedestrian', 'footway', 'path', 'steps', 'living_street'};
+    const streets = {
+      'primary',
+      'secondary',
+      'tertiary',
+      'residential',
+      'unclassified',
+    };
+    final out = <List<V3>>[], pavements = <List<V3>>[];
+    for (final r in _roadRuns) {
+      if (r.pts.length < 5) continue;
+      if (paths.contains(r.kind)) {
+        out.add([
+          for (var k = 0; k < r.pts.length; k += 5)
+            (r.pts[k].$1, r.heights[k], r.pts[k].$2),
+        ]);
+      } else if (streets.contains(r.kind)) {
+        for (final side in [1.0, -1.0]) {
+          final line = <V3>[];
+          for (var k = 0; k < r.pts.length; k += 5) {
+            final a = r.pts[max(0, k - 1)],
+                b = r.pts[min(r.pts.length - 1, k + 1)];
+            var dx = b.$1 - a.$1, dz = b.$2 - a.$2;
+            final len = sqrt(dx * dx + dz * dz);
+            if (len < 1e-6) continue;
+            dx /= len;
+            dz /= len;
+            final off = (r.half + 0.9) * side;
+            line.add((
+              r.pts[k].$1 - dz * off,
+              r.heights[k],
+              r.pts[k].$2 + dx * off,
+            ));
+          }
+          if (line.length >= 3) pavements.add(line);
+        }
+      }
+    }
+    stats['walkways'] = out.length;
+    stats['pavements'] = pavements.length;
+    return (out, pavements);
+  }
 
   /// Lanes on the water alongside each river's centre line, kept only where
   /// the whole lane is over water.

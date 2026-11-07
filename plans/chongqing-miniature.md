@@ -448,3 +448,28 @@ Chrome, Medium, Painted night: about 29-31 FPS in the diorama, 36-39 in the dron
 - Chrome, Realistic, default diorama (settled): 39 FPS with infill, 43-45
   without. Cableway ride: 40-44 FPS. Readings in the first ~15 s after load
   are low (18-25) and must not be used.
+
+## River traffic, famous places, people (2026-11-07)
+- River traffic (movers.dart, runtime only): one vessel per ~320 m of lane,
+  spread along it: Yangtze cruise ships (four stacked white/trim decks, deck
+  lights at night), cargo barges (dark hull, sand/gravel/container load,
+  aft wheelhouse, slow) and small ferries (lit cabin at night). Random
+  lateral offsets so boats on a lane pass each other. Boats still turn
+  around where a district's lane ends (lanes are per district).
+- Famous places (`famousPlaces` in tool/chongqing/landmarks.dart): matched
+  by exact OSM name, chip at the feature's centre, framed by the tallest
+  building inside its outline. Hongyadong, Jiefangbei, Raffles City,
+  Chaotianmen, Yangtze River Cableway, Eighteen Stairs, Grand Theatre,
+  Longmenhao Old Street, Nanshan One Tree, Nanbin Park. Chips: places first
+  (pin icon, no height), then featured sights, then the 8 tallest towers;
+  "Tower N" parts of complexes dropped.
+- People: the build exports `walkways` (footways, pedestrian streets,
+  stairs) and `pavements` (both sides of ordinary streets, half + 0.9 m).
+  At runtime a crowd of 300 per district stays within 220 m of the camera
+  (`_Crowd`): anyone farther away is moved to a random nearby walkway,
+  footpaths weighted 4x pavements. Box figures (legs, shirt, head) for now;
+  GLB people are planned for the refinement pass. Spreading people over a
+  whole district (800 per district) showed almost nobody and cost ~8 FPS.
+  Street level: 37-39 FPS with the crowd.
+- "Riverside at dusk" eye moved from z -930 (now Jiangbeizui's bank) to
+  -770, over the Jialing.

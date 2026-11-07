@@ -509,7 +509,7 @@ class _CityViewState extends State<CityView> {
     (
       icon: Icons.water_outlined,
       label: 'Riverside at dusk',
-      eye: (-640.0, -930.0, 10.0),
+      eye: (-640.0, -770.0, 8.0),
       look: (-549.0, -558.0, 35.0),
       hour: 17.85,
     ),
@@ -967,8 +967,8 @@ class _CityViewState extends State<CityView> {
       itemBuilder: (context, i) {
         final l = city.landmarks[i];
         return ActionChip(
-          avatar: const Icon(Icons.location_city, size: 18),
-          label: Text('${l.name} · ${l.height.round()} m'),
+          avatar: Icon(l.place ? Icons.place : Icons.location_city, size: 18),
+          label: Text(l.place ? l.name : '${l.name} · ${l.height.round()} m'),
           onPressed: () => _goTo(l),
         );
       },
