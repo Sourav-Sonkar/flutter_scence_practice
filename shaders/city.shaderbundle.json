@@ -1,0 +1,10 @@
+{
+  "PainterlyFragment": {
+    "type": "fragment",
+    "file": "shaders/painterly.frag"
+  },
+  "CloudShadowFragment": {
+    "type": "fragment",
+    "file": "shaders/cloud_shadows.frag"
+  }
+}

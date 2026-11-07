@@ -57,6 +57,7 @@ class CityLook {
   int _lightLevel = -1;
   double _lastHour = -1;
   double _gradeSat = -1, _gradeTemp = -1, _gradeContrast = -1, _emissive = -1;
+  double _dusk = -1;
   late final DirectionalLight _light = DirectionalLight(castsShadow: true);
 
   /// Whether the Painted style is active (changes the colour grade).
@@ -79,7 +80,9 @@ class CityLook {
     scene.directionalLight = _light;
 
     roads.roughnessFactor = rain ? 0.3 : 0.9;
-    _emissive = -1; // reflections and water refresh on the next update
+    // Reflections and water refresh on the next update.
+    _dusk = -1;
+    _emissive = -1;
 
     scene.environmentSettings = EnvironmentSettings(
       toneMapping: ToneMappingMode.aces,
@@ -132,6 +135,7 @@ class CityLook {
     _lastHour = -1;
     _gradeSat = -1;
     _gradeContrast = -1;
+    _dusk = -1;
     _emissive = -1;
   }
 
@@ -215,11 +219,15 @@ class CityLook {
     final high = painted && !fog && !rain
         ? ((sky.elevation - 15) / 30).clamp(0.0, 1.0)
         : 0.0;
+    // Sunset: the light itself is orange, so the grade adds little warmth
+    // (warming everything turns shadows brown too) and instead adds colour
+    // and contrast, so hot lit walls stand against cool violet shade.
+    final sunset = fog || rain ? 0.0 : sky.golden;
     final sat = painted
-        ? (fog || rain ? 1.0 : 1.12 - 0.1 * night + 0.12 * high)
-        : (fog || rain ? 1.05 : 1.35 - 0.15 * night);
-    final temp = 0.06 + 0.16 * sky.golden - 0.1 * night + (painted ? 0.05 : 0);
-    final contrast = painted ? 0.94 + 0.18 * high : 1.1;
+        ? (fog || rain ? 1.0 : 1.12 - 0.1 * night + 0.12 * high + 0.05 * sunset)
+        : (fog || rain ? 1.05 : 1.35 - 0.15 * night + 0.05 * sunset);
+    final temp = 0.06 + 0.05 * sky.golden - 0.1 * night + (painted ? 0.05 : 0);
+    final contrast = (painted ? 0.94 + 0.18 * high : 1.1) + 0.08 * sunset;
     if ((sat - _gradeSat).abs() > 0.02 ||
         (temp - _gradeTemp).abs() > 0.01 ||
         (contrast - _gradeContrast).abs() > 0.02) {
@@ -246,15 +254,21 @@ class CityLook {
       homes.emissiveTexture = homeLights[level];
       towers.emissiveTexture = towerLights[level];
     }
+    // Reflections: by day the rivers are muddy and mostly show soft sky
+    // glare, so reflections stay near the physical strength and slightly
+    // blurred; from sunset on the glowing city mirrors strongly in the calm
+    // water.
+    // Sunset counts for less than night: low sun glare on a muddy river.
+    final dusk = fog || rain ? night : max(night, 0.45 * sky.golden);
+    if ((dusk - _dusk).abs() > 0.01) {
+      _dusk = dusk;
+      scene.screenSpaceReflections
+        ..enabled = _reflections && (dusk > 0.25 || rain)
+        ..intensity = 1.0 + 3.5 * dusk
+        ..blur = 0.35 - 0.2 * night;
+    }
     if ((night - _emissive).abs() > 0.01) {
       _emissive = night;
-      // Reflections: by day the rivers are muddy and mostly show soft sky
-      // glare, so reflections stay near the physical strength and slightly
-      // blurred; at night the lit city mirrors strongly in calm dark water.
-      scene.screenSpaceReflections
-        ..enabled = _reflections && (night > 0.25 || rain)
-        ..intensity = 1.0 + 3.5 * night
-        ..blur = 0.35 - 0.2 * night;
       water
         ..roughnessFactor = rain ? 0.25 : 0.1 - 0.07 * night
         ..baseColorFactor = painted

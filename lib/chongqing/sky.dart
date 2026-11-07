@@ -66,19 +66,36 @@ class SkyState {
     // Stars only once it is properly dark, and only a few: light pollution.
     stars = _smooth(-6, -14, e) * (overcast ? 0.0 : 1.0);
 
+    // Sunset is the show: the zenith deepens to a dark blue while the
+    // horizon runs gold -> deep orange -> red as the sun drops, then a rose
+    // afterglow and violet blue hour. A deep blue overhead against a hot
+    // horizon is what makes it read as dramatic rather than sepia; it also
+    // keeps the sky's fill light (which lights shadowed walls) cool.
     zenith = _byElevation(e, [
       (25, vm.Vector3(0.14, 0.34, 0.74)),
-      (8, vm.Vector3(0.2, 0.36, 0.68)),
-      (0, vm.Vector3(0.2, 0.25, 0.5)),
-      (-5, vm.Vector3(0.06, 0.1, 0.26)), // blue hour
+      (8, vm.Vector3(0.16, 0.31, 0.66)),
+      (3, vm.Vector3(0.12, 0.2, 0.5)),
+      (0, vm.Vector3(0.1, 0.14, 0.4)),
+      (-4, vm.Vector3(0.07, 0.09, 0.28)), // blue hour
       (-12, vm.Vector3(0.006, 0.011, 0.034)), // deep navy, not black
     ]);
     horizon = _byElevation(e, [
       (25, vm.Vector3(0.72, 0.83, 0.94)),
-      (8, vm.Vector3(0.95, 0.78, 0.55)), // golden hour
-      (0, vm.Vector3(1.0, 0.5, 0.26)), // sunset
-      (-5, vm.Vector3(0.32, 0.26, 0.4)),
+      (10, vm.Vector3(0.96, 0.8, 0.58)), // golden hour
+      (4, vm.Vector3(1.0, 0.52, 0.2)),
+      (0, vm.Vector3(1.0, 0.32, 0.14)), // the sun on the horizon
+      (-3, vm.Vector3(0.7, 0.24, 0.3)), // afterglow
+      (-6, vm.Vector3(0.3, 0.2, 0.4)),
       (-12, vm.Vector3(0.03, 0.035, 0.07)),
+    ]);
+    // A rose band a little above the horizon, from when the sun is low until
+    // the afterglow fades.
+    afterglow = _byElevation(e, [
+      (12, vm.Vector3.zero()),
+      (4, vm.Vector3(0.5, 0.2, 0.26)),
+      (-1, vm.Vector3(0.62, 0.2, 0.36)),
+      (-5, vm.Vector3(0.3, 0.1, 0.26)),
+      (-10, vm.Vector3.zero()),
     ]);
     // City light pollution warms the low sky at night.
     final pollution = vm.Vector3(0.075, 0.042, 0.03) * night;
@@ -88,13 +105,14 @@ class SkyState {
     // Sunlight: warm and weak near the horizon, white at height.
     sunColor = _byElevation(e, [
       (30, vm.Vector3(1.0, 0.94, 0.84)),
-      (10, vm.Vector3(1.0, 0.8, 0.6)),
-      (1, vm.Vector3(1.0, 0.5, 0.28)),
-      (-2, vm.Vector3(1.0, 0.4, 0.2)),
+      (10, vm.Vector3(1.0, 0.8, 0.58)),
+      (4, vm.Vector3(1.0, 0.64, 0.34)),
+      (1, vm.Vector3(1.0, 0.48, 0.22)),
+      (-2, vm.Vector3(1.0, 0.38, 0.18)),
     ]);
-    // Strong right down to the horizon (golden hour is bright), fading out
-    // only as the disc sets.
-    sunIntensity = 4.2 * _smooth(-2, 9, e);
+    // Strong right down to the horizon (a low sun is the brightest, most
+    // saturated light of the day on what it hits), fading as the disc sets.
+    sunIntensity = 4.2 * _smooth(-2, 6, e);
     // Moon: roughly opposite the sun, cool and dim; it takes over the
     // shadow-casting light at night.
     moon = vm.Vector3(
@@ -114,15 +132,25 @@ class SkyState {
     // Clouds: a few fair-weather ones on clear days, a flat pale layer in
     // fog, a full dark deck in rain.
     final raining = overcast && !foggy;
-    cloudCover = raining ? 1.0 : (foggy ? 0.6 : 0.34);
+    // A few more clouds at sunset, to catch the colour.
+    cloudCover = raining ? 1.0 : (foggy ? 0.6 : 0.34 + 0.14 * golden);
     cloudOvercast = overcast ? 1.0 : 0.0;
     // Lit by the sun by day (gold at sunset), by the city's orange glow at
     // night; undersides darker and cooler.
-    final dayLit = _lerp(vm.Vector3(1.0, 0.98, 0.95), sunColor * 1.1, golden);
+    // At sunset clouds burn orange and pink underneath, violet in shade.
+    final dayLit = _lerp(
+      vm.Vector3(1.0, 0.98, 0.95),
+      sunColor * 1.2 + afterglow * 0.8,
+      golden,
+    );
     final nightLit = vm.Vector3(0.06, 0.045, 0.04);
     cloudLit = _lerp(dayLit, nightLit, night);
     cloudShade = _lerp(
-      _lerp(vm.Vector3(0.62, 0.66, 0.74), sunColor * 0.55, golden * 0.6),
+      _lerp(
+        vm.Vector3(0.62, 0.66, 0.74),
+        vm.Vector3(0.42, 0.28, 0.46),
+        golden * 0.8,
+      ),
       vm.Vector3(0.025, 0.026, 0.04),
       night,
     );
@@ -142,6 +170,7 @@ class SkyState {
       horizon = _lerp(horizon, grey + pollution * 0.6, 0.7);
       fog = _lerp(fog, grey, 0.75);
       sunIntensity *= foggy ? 0.35 : 0.45;
+      afterglow = afterglow * 0.15;
     }
   }
 
@@ -155,6 +184,7 @@ class SkyState {
   late vm.Vector3 cloudLit, cloudShade;
   late final double stars;
   late vm.Vector3 zenith, horizon, fog;
+  late vm.Vector3 afterglow;
   late final vm.Vector3 sunColor;
   late double sunIntensity;
   late final vm.Vector3 moon;

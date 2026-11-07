@@ -12,11 +12,12 @@ void main(List<String> args) async {
     // loadFmatMaterial (and hot-reloadable). A no-op when there are none.
     await buildMaterials(buildInput: input, buildOutput: output);
 // flutter_scene:init:end
-    // The Chongqing city's painterly post-process filter (shaders/).
+    // The Chongqing city's full-screen shaders (shaders/): the painterly
+    // filter and drifting cloud shadows.
     await buildShaderBundleJson(
       buildInput: input,
       buildOutput: output,
-      manifestFileName: 'shaders/painterly.shaderbundle.json',
+      manifestFileName: 'shaders/city.shaderbundle.json',
     );
   });
 }

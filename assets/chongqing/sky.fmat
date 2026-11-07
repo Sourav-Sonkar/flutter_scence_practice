@@ -21,6 +21,10 @@ material {
     { type: float, name: night, default: 0.0 },
     { type: float, name: stars, default: 0.0 },
     { type: vec3, name: city_glow, default: [0.0, 0.0, 0.0] },
+    // Sunset: the rose band above the horizon, and how golden the hour is
+    // (widens the glow around a low sun).
+    { type: vec3, name: afterglow, default: [0.0, 0.0, 0.0] },
+    { type: float, name: golden, default: 0.0 },
     { type: float, name: time, default: 0.0 },
     { type: float, name: coverage, default: 0.35 },
     { type: float, name: overcast, default: 0.0 },
@@ -92,14 +96,31 @@ sky {
 
     // --- base sky ---
     float h = clamp(up, 0.0, 1.0);
-    vec3 col = mix(material_params.horizon, material_params.zenith, pow(h, 0.45));
-    if (up < 0.0) col = material_params.horizon * 0.9;
+    // By day the horizon colour hugs the horizon; at sunset the warm band
+    // climbs high up the sky (gold -> orange -> rose) before the blue.
+    // The horizon burns on the sun's side only; the far side goes cool
+    // (blue-violet with a little rose), which is also what lights the shaded
+    // walls, so they stay cool against the hot lit ones.
+    float golden = material_params.golden;
+    float sunward = dot(normalize(dir.xz + vec2(1e-4)), normalize(sun.xz + vec2(1e-4))) * 0.5 + 0.5;
+    vec3 far_side = material_params.zenith * 1.5 + material_params.afterglow * 0.6;
+    vec3 horizon = mix(mix(material_params.horizon, far_side, 0.8 * golden),
+                       material_params.horizon, smoothstep(0.2, 0.9, sunward));
+    float curve = mix(0.45, 1.3, golden);
+    vec3 col = mix(horizon, material_params.zenith, pow(h, curve));
+    if (up < 0.0) col = horizon * 0.9;
     // City light pollution hugging the horizon at night.
     col += material_params.city_glow * exp(-max(up, 0.0) * 9.0);
     // Glow around the sun (strongest low in the sky at golden hour).
     float toSun = max(dot(dir, sun), 0.0);
     col += material_params.sun_color * (pow(toSun, 8.0) * 0.35 + pow(toSun, 64.0) * 0.6)
            * material_params.sun_visible * (1.0 - night);
+    // Sunset: a wide fiery glow around the low sun, and a rose band a little
+    // above the horizon, strongest on the sun's side of the sky.
+    col += material_params.sun_color * pow(toSun, 6.0) * 0.4 * golden *
+           material_params.sun_visible;
+    float band = exp(-pow((h - 0.07) / 0.11, 2.0));
+    col += material_params.afterglow * band * (0.5 + 0.5 * sunward);
 
     // --- painted sky: deeper cobalt, towering cumulus on the horizon ---
     float painted = material_params.painted;

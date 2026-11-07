@@ -210,7 +210,10 @@ domain, compiled by the build hook):
 - **Build note:** the build hook decides whether to rerun from the names of the files
   directly inside `assets/`. A *new* `.fmat` in a subfolder needs
   `rm -rf .dart_tool/hooks_runner/flutter_scene_practice` once; edits to an existing one
-  rebuild normally.
+  rebuild normally. (2026-11-07: an edited `assets/chongqing/sky.fmat` was not
+  recompiled; deleting the git-ignored `flutter_scene_generated/material.*` and
+  `manifest.json` forced it. Check `build/web/assets/flutter_scene_generated/`
+  timestamps after a shader edit.)
 
 ## District 2: Jialing riverside (2026-11-05)
 
@@ -473,3 +476,35 @@ Chrome, Medium, Painted night: about 29-31 FPS in the diorama, 36-39 in the dron
   Street level: 37-39 FPS with the crowd.
 - "Riverside at dusk" eye moved from z -930 (now Jiangbeizui's bank) to
   -770, over the Jialing.
+
+## Cloud shadows and a dramatic sunset (2026-11-07)
+- Cloud shadows (lib/chongqing/cloud_shadows.dart, shaders/cloud_shadows.frag):
+  a `CustomRenderPass` at `afterScene` that reads the engine's linear depth,
+  rebuilds each pixel's world position, traces it toward the sun to a cloud
+  layer at 1400 m and darkens it under a drifting 4-octave noise field
+  (450 m features, coverage from the sky's cloud cover, wind 14/5 m/s east).
+  Both styles; strength 0.42, fading below ~9 deg sun elevation, none when
+  overcast or at night. Depth is already produced on Medium (GTAO), and an
+  A/B showed no measurable FPS cost.
+- Shader bundle renamed painterly -> `city.shaderbundle` (painterly filter +
+  cloud shadows).
+- Sunset (sky.dart, sky.fmat, city_look.dart):
+  - Zenith deepens to dark blue as the sun drops; horizon gold -> deep
+    orange -> red at 0 deg -> rose afterglow -> violet blue hour. A new
+    `afterglow` rose band sits just above the horizon.
+  - The hot horizon is on the sun's side only; the far side is cool
+    blue-violet. That sky also lights the scene (sky environment), so shaded
+    walls stay cool against hot lit ones instead of everything going brown.
+  - At golden hour the warm band climbs higher (gradient exponent 0.45 ->
+    1.3) and the sun has a wider glow.
+  - Sun colour more saturated low down; intensity holds until ~6 deg.
+  - More clouds at sunset (cover +0.14), lit orange/pink below, violet shade.
+  - Grade: much less blanket warmth (+0.05 instead of +0.16 temperature),
+    slightly more saturation and contrast.
+  - Screen-space reflections on from sunset (at 45% of the night strength),
+    so the river mirrors the glowing city.
+- Open: SSR shows streaky dashes on the water at eye level on Medium; god
+  rays (engine `GodRaysSettings`) not used: they march at most a few hundred
+  metres per pixel, too short for the diorama camera.
+- Gotcha: `timeout` is not installed on macOS; a `timeout 900 fvm flutter
+  build ...` pipeline "succeeds" without building.

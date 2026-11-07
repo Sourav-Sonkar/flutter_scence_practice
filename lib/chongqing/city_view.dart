@@ -10,6 +10,7 @@ import 'package:vector_math/vector_math.dart' as vm;
 
 import 'city_data.dart';
 import 'city_look.dart';
+import 'cloud_shadows.dart';
 import 'clouds.dart';
 import 'detail_chunks.dart';
 import 'district_scene.dart';
@@ -48,6 +49,7 @@ class _CityViewState extends State<CityView> {
   // Style: realistic PBR or the hand-painted, anime-inspired look.
   PaintedLook? _paintedLook;
   PainterlyFilter? _painterly;
+  CloudShadows? _cloudShadows;
   bool _painted = false;
   late final FacadeTextures _homeTex, _glassTex;
   Map<String, Material> get _activeMaterials =>
@@ -173,6 +175,7 @@ class _CityViewState extends State<CityView> {
       _build(city);
       _paintedLook = await PaintedLook.load(_homeTex, _glassTex);
       _painterly = await PainterlyFilter.attach(_scene);
+      _cloudShadows = await CloudShadows.attach(_scene);
       _city = city;
       // Load the districts around the starting view before showing it;
       // the rest stream in as the camera moves.
@@ -402,6 +405,8 @@ class _CityViewState extends State<CityView> {
       ..setFloat('night', s.night)
       ..setFloat('stars', s.stars)
       ..setVec3('city_glow', s.cityGlow)
+      ..setVec3('afterglow', s.afterglow)
+      ..setFloat('golden', s.golden)
       ..setFloat('coverage', s.cloudCover)
       ..setFloat('overcast', s.cloudOvercast)
       ..setVec3('cloud_lit', s.cloudLit)
@@ -446,6 +451,7 @@ class _CityViewState extends State<CityView> {
     _shaderSky?.parameters.setFloat('time', _clock.value);
     if (_playing) _hour.value = (_hour.value + dt / _secondsPerHour) % 24;
     if (_hour.value != _sky.hour) _updateSky();
+    _cloudShadows?.update(_sky, dt);
     if (_mode == _Mode.drone) _updateDrone(dt);
     final eye = _cameraNode.globalTransform.getTranslation();
     _stream(eye);

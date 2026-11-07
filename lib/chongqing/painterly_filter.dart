@@ -16,7 +16,7 @@ class PainterlyFilter {
     try {
       // Built by hook/build.dart and listed under flutter: assets.
       final library = await gpu.loadShaderLibraryAsync(
-        'build/shaderbundles/painterly.shaderbundle',
+        'build/shaderbundles/city.shaderbundle',
       );
       final shader = library?['PainterlyFragment'];
       if (shader == null) return null;
