@@ -15,3 +15,11 @@ A few resources to get you started if this is your first Flutter project:
 For help getting started with Flutter development, view the
 [online documentation](https://docs.flutter.dev/), which offers tutorials,
 samples, guidance on mobile development, and a full API reference.
+
+## Credits
+
+- Map data © OpenStreetMap contributors (ODbL).
+- "Grass (free to use)" (https://sketchfab.com/3d-models/grass-free-to-use-6762d57132694011a56b502b23072940)
+  by AgultoDesigns, licensed under CC-BY-4.0
+  (http://creativecommons.org/licenses/by/4.0/); used as `assets/chongqing/grass.glb`
+  with its material changed to alpha-masked.

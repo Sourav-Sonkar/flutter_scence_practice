@@ -508,3 +508,26 @@ Chrome, Medium, Painted night: about 29-31 FPS in the diorama, 36-39 in the dron
   metres per pixel, too short for the diorama camera.
 - Gotcha: `timeout` is not installed on macOS; a `timeout 900 fvm flutter
   build ...` pipeline "succeeds" without building.
+
+## Grass (2026-11-08)
+- Two models, both near the camera only (lib/chongqing/grass.dart):
+  - Lawn patch, from "Realistic grass" (Sketchfab Standard licence, so the
+    .glb is git-ignored, see below): 2.9 m square, thinned to one face of
+    every other blade card (7,680 tris, was 30,720 plus a hidden 20,480-tri
+    edge layer), Y-up, metres, up-facing normals, masked alpha, blades drawn
+    twice as tall. Built by a one-off script into
+    `assets/chongqing/grass_patch.glb` (800 KB).
+  - Tuft, "Grass (free to use)" by AgultoDesigns (CC-BY-4.0, credited in the
+    README): 1,408 tris, packed to `assets/chongqing/grass.glb` (63 KB) with
+    its BLEND material changed to MASK (blended surfaces are back-face culled
+    here, so double-sided blades lost half their faces).
+- Placement: four fixed spots around every tree and shrub (trees already
+  mark parks, verges and green slopes), each tilted to the terrain slope.
+  28 lawn patches go to the nearest spots within 35 m, 320 tufts to the next
+  out to 90 m; re-placed when the camera has moved 6 m. Shown only when the
+  camera is close (same rule as cars and people). Street level: ~36 FPS.
+- InstancedMesh.updateInstanceTransforms hands an unmodifiable list: mutate
+  each matrix with setFrom, never assign (that threw every frame).
+- Open: `grass_patch.glb` is not in git (Sketchfab Standard does not allow
+  redistributing the model file); a fresh clone runs without lawn patches
+  (GrassModels.load returns null) until that is settled.

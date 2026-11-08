@@ -17,6 +17,7 @@ import 'district_scene.dart';
 import 'tree_shade.dart';
 import 'street_lamps.dart' show RainPainter;
 import 'facade_textures.dart';
+import 'grass.dart';
 import 'joystick.dart';
 import 'painted_look.dart';
 import 'painterly_filter.dart';
@@ -50,6 +51,7 @@ class _CityViewState extends State<CityView> {
   PaintedLook? _paintedLook;
   PainterlyFilter? _painterly;
   CloudShadows? _cloudShadows;
+  GrassModels? _grass;
   bool _painted = false;
   late final FacadeTextures _homeTex, _glassTex;
   Map<String, Material> get _activeMaterials =>
@@ -176,6 +178,7 @@ class _CityViewState extends State<CityView> {
       _paintedLook = await PaintedLook.load(_homeTex, _glassTex);
       _painterly = await PainterlyFilter.attach(_scene);
       _cloudShadows = await CloudShadows.attach(_scene);
+      _grass = await GrassModels.load();
       _city = city;
       // Load the districts around the starting view before showing it;
       // the rest stream in as the camera moves.
@@ -208,8 +211,12 @@ class _CityViewState extends State<CityView> {
     if (_districts.containsKey(name) || !_loading.add(name)) return;
     try {
       final data = await CityData.load(name);
-      final district = DistrictScene(name, data, _activeMaterials)
-        ..setQuality(_q);
+      final district = DistrictScene(
+        name,
+        data,
+        _activeMaterials,
+        grass: _grass,
+      )..setQuality(_q);
       if (_painted && _paintedLook != null) {
         district.setPaintedDetails(true, _paintedLook!.detailFor);
       }

@@ -5,6 +5,7 @@ import 'city_data.dart';
 import 'city_look.dart';
 import 'crowns.dart';
 import 'detail_chunks.dart';
+import 'grass.dart';
 import 'movers.dart';
 import 'ride_vehicles.dart';
 import 'street_lamps.dart';
@@ -15,7 +16,12 @@ import 'tree_shade.dart';
 /// tiles (trees, rooftops, lamp poles), lamp heads, LED crowns, traffic,
 /// boats and ride vehicles.
 class DistrictScene {
-  DistrictScene(this.name, CityData data, Map<String, Material> materials) {
+  DistrictScene(
+    this.name,
+    CityData data,
+    Map<String, Material> materials, {
+    GrassModels? grass,
+  }) {
     root = Node(name: 'district $name');
     for (final tile in data.layers) {
       if (tile.kind == 'lamplight') continue; // drawn by the street lamps
@@ -60,6 +66,10 @@ class DistrictScene {
       ],
     );
     treeShade = TreeShade(data, root);
+    if (grass != null) {
+      this.grass = GrassField(data, grass);
+      root.add(this.grass!.root);
+    }
     movers = Movers(data);
     final ridesNode = Node(name: '$name rides');
     for (final ride in data.rides) {
@@ -98,6 +108,7 @@ class DistrictScene {
   late final LedCrowns crowns;
   late final StreetLamps lamps;
   late final Movers movers;
+  GrassField? grass;
   late final TreeShade treeShade;
   final List<RideVehicles> rides = [];
   final List<(Node, vm.Aabb3)> _farHidden = [];
@@ -154,6 +165,7 @@ class DistrictScene {
     crowns.update(time, night);
     vegetation.update(eye);
     treeShade.update(sun);
+    grass?.update(eye, near: showCars);
     rooftops.update(eye);
   }
 }
