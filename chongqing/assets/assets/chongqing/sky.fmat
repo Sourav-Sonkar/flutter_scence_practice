@@ -1,0 +1,220 @@
+// Chongqing sky: gradient, sun, moon, stars and a real cloud layer.
+//
+// Clouds sit on a flat layer high above the city. Each pixel traces its view
+// ray up to that layer, so clouds have true perspective: big overhead,
+// thin streaks packed toward the horizon. Wind scrolls the layer and a slower
+// second noise reshapes it. Clouds are shaded by sampling the layer toward
+// the sun (thick parts self-shadow), get bright silver edges when you look
+// toward the sun, and are lit from below by the city at night.
+//
+// Everything is linear HDR; the engine's exposure and tone mapping apply, so
+// the sky matches the city's colours.
+material {
+  name: "ChongqingSky",
+  parameters: [
+    { type: vec3, name: zenith, default: [0.14, 0.34, 0.74] },
+    { type: vec3, name: horizon, default: [0.72, 0.83, 0.94] },
+    { type: vec3, name: sun_dir, default: [0.3, 0.5, 0.8] },
+    { type: vec3, name: sun_color, default: [1.0, 0.94, 0.84] },
+    { type: float, name: sun_visible, default: 1.0 },
+    { type: vec3, name: moon_dir, default: [-0.3, 0.6, -0.7] },
+    { type: float, name: night, default: 0.0 },
+    { type: float, name: stars, default: 0.0 },
+    { type: vec3, name: city_glow, default: [0.0, 0.0, 0.0] },
+    // Sunset: the rose band above the horizon, and how golden the hour is
+    // (widens the glow around a low sun).
+    { type: vec3, name: afterglow, default: [0.0, 0.0, 0.0] },
+    { type: float, name: golden, default: 0.0 },
+    { type: float, name: time, default: 0.0 },
+    { type: float, name: coverage, default: 0.35 },
+    { type: float, name: overcast, default: 0.0 },
+    { type: vec3, name: cloud_lit, default: [1.0, 0.98, 0.95] },
+    { type: vec3, name: cloud_shade, default: [0.55, 0.6, 0.68] },
+    { type: float, name: detail, default: 5.0 },
+    // 0 = realistic, 1 = painted: big puffy cumulus with crisp edges and
+    // two-tone (sunlit / shaded) light, like hand-painted skies.
+    { type: float, name: painted, default: 0.0 },
+  ],
+}
+
+sky {
+  // Cheap hash and value noise (no sine), good enough for clouds and fast on
+  // phones and WebGL.
+  float cq_hash(vec2 p) {
+    vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+    p3 += dot(p3, p3.yzx + 33.33);
+    return fract((p3.x + p3.y) * p3.z);
+  }
+
+  float cq_noise(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    return mix(mix(cq_hash(i), cq_hash(i + vec2(1.0, 0.0)), u.x),
+               mix(cq_hash(i + vec2(0.0, 1.0)), cq_hash(i + vec2(1.0, 1.0)), u.x),
+               u.y);
+  }
+
+  float cq_fbm(vec2 p, float octaves) {
+    float v = 0.0;
+    float a = 0.5;
+    mat2 m = mat2(1.6, 1.2, -1.2, 1.6);
+    for (int i = 0; i < 6; i++) {
+      if (float(i) >= octaves) break;
+      v += a * cq_noise(p);
+      p = m * p;
+      a *= 0.5;
+    }
+    return v;
+  }
+
+  // Cloud density at a point on the cloud layer.
+  float cq_density(vec2 uv, float t) {
+    // Painted skies: fewer clouds overhead (the drama is on the horizon).
+    float coverage = material_params.coverage * mix(1.0, 0.7, material_params.painted);
+    float overcast = material_params.overcast;
+    float octaves = material_params.detail;
+    // Wind carries the layer; a slower field makes shapes grow and fade.
+    vec2 wind = vec2(0.03, 0.011) * t;
+    float base = cq_fbm(uv + wind, octaves);
+    float evolve = cq_fbm(uv * 1.7 - wind * 0.6 + vec2(4.1, 1.3), max(octaves - 2.0, 2.0));
+    float shape = base * 0.75 + evolve * 0.35;
+    // Fair-weather clouds: crisp clumps above a threshold set by coverage.
+    float edge = mix(0.14, 0.035, material_params.painted);
+    float puffy = smoothstep(0.92 - coverage, 0.92 - coverage + edge, shape);
+    // Overcast: a continuous deck with soft variation.
+    float deck = clamp(0.55 + (shape - 0.5) * 1.6, 0.0, 1.0);
+    return mix(puffy, deck, overcast);
+  }
+
+  vec3 Sky(vec3 direction) {
+    vec3 dir = normalize(direction);
+    float up = dir.y;
+    float night = material_params.night;
+    vec3 sun = normalize(material_params.sun_dir);
+    float t = material_params.time;
+
+    // --- base sky ---
+    float h = clamp(up, 0.0, 1.0);
+    // By day the horizon colour hugs the horizon; at sunset the warm band
+    // climbs high up the sky (gold -> orange -> rose) before the blue.
+    // The horizon burns on the sun's side only; the far side goes cool
+    // (blue-violet with a little rose), which is also what lights the shaded
+    // walls, so they stay cool against the hot lit ones.
+    float golden = material_params.golden;
+    float sunward = dot(normalize(dir.xz + vec2(1e-4)), normalize(sun.xz + vec2(1e-4))) * 0.5 + 0.5;
+    vec3 far_side = material_params.zenith * 1.5 + material_params.afterglow * 0.6;
+    vec3 horizon = mix(mix(material_params.horizon, far_side, 0.8 * golden),
+                       material_params.horizon, smoothstep(0.2, 0.9, sunward));
+    float curve = mix(0.45, 1.3, golden);
+    vec3 col = mix(horizon, material_params.zenith, pow(h, curve));
+    if (up < 0.0) col = horizon * 0.9;
+    // City light pollution hugging the horizon at night.
+    col += material_params.city_glow * exp(-max(up, 0.0) * 9.0);
+    // Glow around the sun (strongest low in the sky at golden hour).
+    float toSun = max(dot(dir, sun), 0.0);
+    col += material_params.sun_color * (pow(toSun, 8.0) * 0.35 + pow(toSun, 64.0) * 0.6)
+           * material_params.sun_visible * (1.0 - night);
+    // Sunset: a wide fiery glow around the low sun, and a rose band a little
+    // above the horizon, strongest on the sun's side of the sky.
+    col += material_params.sun_color * pow(toSun, 6.0) * 0.4 * golden *
+           material_params.sun_visible;
+    float band = exp(-pow((h - 0.07) / 0.11, 2.0));
+    col += material_params.afterglow * band * (0.5 + 0.5 * sunward);
+
+    // --- painted sky: deeper cobalt, towering cumulus on the horizon ---
+    float painted = material_params.painted;
+    if (painted > 0.01) {
+      // Its own summer gradient: deep cobalt overhead to clear blue at the
+      // horizon, by day only (dusk and night keep the computed colours).
+      float day = (1.0 - night) * (1.0 - material_params.overcast) *
+                  smoothstep(0.0, 0.15, sun.y);
+      vec3 cobalt = mix(vec3(0.26, 0.48, 0.92), vec3(0.03, 0.14, 0.62), pow(h, 0.6));
+      col = mix(col, cobalt, painted * day);
+
+      float banks = painted * (1.0 - material_params.overcast) * (1.0 - night * 0.4);
+      if (banks > 0.01 && up > -0.03 && up < 0.5) {
+        float az = atan(dir.z, dir.x);
+        // A few big cloud heads around the horizon.
+        float profile = cq_fbm(vec2(az * 1.9 + 11.0, 3.7), 4.0);
+        float top = 0.03 + pow(clamp(profile, 0.0, 1.0), 2.4) * 0.55;
+        // Lumpy cauliflower edge, drifting very slowly.
+        vec2 q = vec2(az * 16.0 + t * 0.004, up * 26.0);
+        float lump = cq_fbm(q, 4.0);
+        float edge = up + (lump - 0.5) * 0.06;
+        float inside = smoothstep(top + 0.012, top - 0.008, edge);
+        // Light: tops and the sun-facing side lit, bases cool and shaded.
+        float vt = clamp(up / max(top, 0.01), 0.0, 1.0);
+        vec2 flat_dir = normalize(dir.xz + vec2(1e-4));
+        float facing = dot(flat_dir, normalize(sun.xz + vec2(1e-4)));
+        float lb = smoothstep(0.42, 0.58, vt * 0.75 + lump * 0.45 + facing * 0.12 - 0.12);
+        // Bright white heads with cool blue-grey shadowed undersides.
+        vec3 bank = mix(material_params.cloud_shade * vec3(0.78, 0.86, 1.05),
+                        material_params.cloud_lit * 1.25, lb);
+        bank += material_params.city_glow * 2.0 * night;
+        // The base melts into the horizon haze.
+        bank = mix(bank, material_params.horizon, (1.0 - smoothstep(0.0, 0.25, vt)) * 0.4);
+        col = mix(col, bank, inside * banks);
+      }
+    }
+
+    // --- stars ---
+    // Stars are round points, not grid cells: the sky is split into cells by
+    // longitude/latitude, a few cells hold a star at a random spot inside
+    // them, and each star is a small soft disc. Cell width shrinks with
+    // latitude, so the longitude distance is corrected by cos(latitude).
+    if (material_params.stars > 0.001 && up > 0.05) {
+      float lat = asin(up);
+      vec2 g = vec2(atan(dir.z, dir.x), lat) * 220.0;
+      vec2 cell = floor(g);
+      float r = cq_hash(cell);
+      if (r > 0.992) {
+        vec2 centre = vec2(cq_hash(cell + 1.7), cq_hash(cell + 9.2)) * 0.6 + 0.2;
+        vec2 d = (fract(g) - centre) * vec2(cos(lat), 1.0);
+        float size = 0.1 + 0.08 * cq_hash(cell + 3.3);
+        float disc = exp(-dot(d, d) / (size * size));
+        // Mostly faint, a few bright; a slow, gentle shimmer.
+        float brightness = mix(0.35, 1.6, pow(cq_hash(cell + 5.1), 4.0));
+        float shimmer = 0.85 + 0.15 * sin(t * (0.7 + r * 1.3) + r * 60.0);
+        vec3 tint = mix(vec3(1.0, 0.92, 0.82), vec3(0.85, 0.9, 1.0), cq_hash(cell + 7.7));
+        col += tint * disc * brightness * shimmer * material_params.stars
+               * smoothstep(0.05, 0.35, up);
+      }
+    }
+
+    // --- moon ---
+    vec3 moon = normalize(material_params.moon_dir);
+    float m = dot(dir, moon);
+    col += vec3(0.85, 0.88, 0.95) * smoothstep(0.99975, 0.99985, m) * night * 2.2;
+    col += vec3(0.25, 0.3, 0.45) * pow(max(m, 0.0), 200.0) * night * 0.4;
+
+    // --- sun disc ---
+    col += material_params.sun_color * smoothstep(0.99955, 0.99975, toSun) * 18.0
+           * material_params.sun_visible;
+
+    // --- clouds ---
+    if (up > 0.0 && material_params.coverage > 0.01) {
+      // Trace to the cloud layer: distance grows toward the horizon.
+      // Painted skies have fewer, bigger clouds.
+      vec2 uv = dir.xz / max(up, 0.02) * mix(0.9, 0.5, material_params.painted);
+      float d = cq_density(uv, t);
+      // Self-shadowing: look a little way toward the sun on the layer.
+      float toward = cq_density(uv + normalize(sun.xz + vec2(1e-4)) * 0.18, t);
+      float light = exp(-toward * 1.8);
+      // Painted: snap to a sunlit and a shaded tone with a soft seam.
+      light = mix(light, smoothstep(0.42, 0.58, light), material_params.painted);
+      vec3 cloud = mix(material_params.cloud_shade, material_params.cloud_lit, light);
+      // Thin edges glow when you look toward the sun.
+      cloud += material_params.sun_color * pow(toSun, 6.0) * (1.0 - d) * 1.4
+               * material_params.sun_visible * (1.0 - night);
+      // At night the city lights the cloud bases from below.
+      cloud += material_params.city_glow * 2.5 * night;
+      // Far clouds melt into the horizon haze.
+      float far = 1.0 - smoothstep(0.0, 0.3, up);
+      cloud = mix(cloud, material_params.horizon, far * 0.6);
+      float alpha = d * smoothstep(0.0, 0.08, up);
+      col = mix(col, cloud, alpha);
+    }
+    return col;
+  }
+}

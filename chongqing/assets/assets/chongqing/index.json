@@ -1,0 +1,300 @@
+{
+ "districts": {
+  "yuzhong_tip": {
+   "title": "Yuzhong Peninsula Tip",
+   "bounds": {
+    "minX": -968.3053915823007,
+    "maxX": 968.3053915823007,
+    "minZ": -884.5920000002955,
+    "maxZ": 884.5919999999026
+   },
+   "riverLevel": 160.7,
+   "landmarks": [
+    {
+     "name": "Hongyadong",
+     "x": -475.8204278962596,
+     "y": 257.55580041812436,
+     "z": -546.8598004910061,
+     "ground": 217.5558004181244,
+     "height": 40.0,
+     "place": true,
+     "rank": 0
+    },
+    {
+     "name": "Jiefangbei",
+     "x": -643.2481765436967,
+     "y": 314.70199714648504,
+     "z": -10.565898570103425,
+     "ground": 274.70199714648504,
+     "height": 40.0,
+     "place": true,
+     "rank": 1
+    },
+    {
+     "name": "Raffles City",
+     "x": 311.9483202639557,
+     "y": 445.5282745535451,
+     "z": -835.407740875735,
+     "ground": 233.18133721758576,
+     "height": 212.34693733595932,
+     "place": true,
+     "rank": 2
+    },
+    {
+     "name": "Yangtze River Cableway",
+     "x": 433.3553949489099,
+     "y": 200.7,
+     "z": 210.1458869997636,
+     "ground": 160.7,
+     "height": 40.0,
+     "place": true,
+     "rank": 4
+    },
+    {
+     "name": "Chongqing World Financial Center",
+     "x": -565.435478044656,
+     "y": 621.0512582905425,
+     "z": -213.91646040015647,
+     "ground": 281.0512582905425,
+     "height": 340,
+     "en": true
+    },
+    {
+     "name": "Yingli Tower",
+     "x": -815.4438609396462,
+     "y": 541.8770205300065,
+     "z": 165.6509093999082,
+     "ground": 253.87702053000646,
+     "height": 288,
+     "en": true
+    },
+    {
+     "name": "World Trade Centre Chongqing",
+     "x": -898.3550100939793,
+     "y": 534.2251188839755,
+     "z": -79.23129709100228,
+     "ground": 272.2251188839755,
+     "height": 262,
+     "en": true
+    },
+    {
+     "name": "The Westin Chongqing Liberation Square",
+     "x": -355.6860056470901,
+     "y": 533.3328642098285,
+     "z": 20.360359199807984,
+     "ground": 288.3328642098285,
+     "height": 245,
+     "en": true
+    },
+    {
+     "name": "Xinhua International Building",
+     "x": -700.4575956892738,
+     "y": 500.91446372028486,
+     "z": 137.50982639985395,
+     "ground": 261.91446372028486,
+     "height": 239,
+     "en": true
+    },
+    {
+     "name": "Evergrande Liberation Monument Centre Tower 1",
+     "x": -498.84242652843136,
+     "y": 487.00475732314294,
+     "z": 290.1498617998531,
+     "ground": 264.00475732314294,
+     "height": 223,
+     "en": true
+    },
+    {
+     "name": "Chongqing Time Square",
+     "x": -635.7094349176767,
+     "y": 450.5748803496686,
+     "z": -112.90711140014699,
+     "ground": 255.5748803496686,
+     "height": 195,
+     "en": true
+    },
+    {
+     "name": "Marriott Executive Apartments Chongqing",
+     "x": -893.3461478603731,
+     "y": 422.4911033647782,
+     "z": 182.58704521858527,
+     "ground": 265.4911033647782,
+     "height": 157,
+     "en": true
+    }
+   ],
+   "rides": [
+    "cableway"
+   ]
+  },
+  "jialing_riverside": {
+   "title": "Jialing Riverside",
+   "bounds": {
+    "minX": -5325.679653699213,
+    "maxX": -968.3053915823007,
+    "minZ": -1105.7400000001728,
+    "maxZ": 1105.73999999978
+   },
+   "riverLevel": 160.7,
+   "landmarks": [
+    {
+     "name": "Eighteen Stairs",
+     "x": -1041.4474566102588,
+     "y": 310.006221809675,
+     "z": 669.1232507536913,
+     "ground": 208.57492077547766,
+     "height": 101.43130103419736,
+     "place": true,
+     "rank": 5
+    },
+    {
+     "name": "Liziba Station",
+     "x": -4461.728534168691,
+     "y": 256.0726350998184,
+     "z": 479.71424159979966,
+     "ground": 216.07263509981843,
+     "height": 40,
+     "featured": true
+    },
+    {
+     "name": "People's Square",
+     "x": -3067.4980900241712,
+     "y": 247.96700934812026,
+     "z": -522.2385286343546,
+     "ground": 217.96700934812026,
+     "height": 30,
+     "featured": true
+    },
+    {
+     "name": "Chongqing People's Grand Hall",
+     "x": -2905.862134627906,
+     "y": 288.0751585523447,
+     "z": -486.44394535402444,
+     "ground": 223.5751585523447,
+     "height": 65,
+     "featured": true
+    },
+    {
+     "name": "Chongqing Poly Tower",
+     "x": -1242.159101665348,
+     "y": 561.2096448632358,
+     "z": 8.108391419885134,
+     "ground": 274.4096448632357,
+     "height": 287,
+     "en": true
+    }
+   ],
+   "rides": [
+    "monorail"
+   ]
+  },
+  "nanan_riverside": {
+   "title": "Nan'an Riverside",
+   "bounds": {
+    "minX": 968.3053915823007,
+    "maxX": 2517.5940181123306,
+    "minZ": -884.5920000002955,
+    "maxZ": 2211.4799999999527
+   },
+   "riverLevel": 160.7,
+   "landmarks": [
+    {
+     "name": "Longmenhao Old Street",
+     "x": 1074.5430176192722,
+     "y": 264.4388846468124,
+     "z": 125.78108425703394,
+     "ground": 224.4388846468124,
+     "height": 40.0,
+     "place": true,
+     "rank": 7
+    },
+    {
+     "name": "Nanshan One Tree",
+     "x": 1828.901587748429,
+     "y": 482.32334009494883,
+     "z": 1334.4390402630208,
+     "ground": 442.32334009494883,
+     "height": 40.0,
+     "place": true,
+     "rank": 8
+    }
+   ],
+   "rides": []
+  },
+  "jiangbeizui": {
+   "title": "Jiangbeizui",
+   "bounds": {
+    "minX": -968.3053915823007,
+    "maxX": 968.3053915823007,
+    "minZ": -2211.4799999999527,
+    "maxZ": -884.5920000002955
+   },
+   "riverLevel": 160.7,
+   "landmarks": [
+    {
+     "name": "Chaotianmen",
+     "x": 405.92159443083716,
+     "y": 242.57435210421093,
+     "z": -1052.4917894295295,
+     "ground": 202.57435210421093,
+     "height": 40.0,
+     "place": true,
+     "rank": 3
+    },
+    {
+     "name": "Chongqing Grand Theatre",
+     "x": -238.5896633730533,
+     "y": 243.00467583937538,
+     "z": -1406.356039556895,
+     "ground": 203.00467583937538,
+     "height": 40.0,
+     "place": true,
+     "rank": 6
+    },
+    {
+     "name": "The Crystal",
+     "x": 350.209777560355,
+     "y": 469.592691607428,
+     "z": -899.1166847144436,
+     "ground": 193.09269160742798,
+     "height": 277,
+     "en": true
+    },
+    {
+     "name": "Agricultural Bank of China Tower",
+     "x": -796.225047254924,
+     "y": 334.9704042046298,
+     "z": -1461.1235601462624,
+     "ground": 246.3905164568652,
+     "height": 89,
+     "en": true
+    }
+   ],
+   "rides": []
+  },
+  "nanbin_road": {
+   "title": "Nanbin Road",
+   "bounds": {
+    "minX": -968.3053915823007,
+    "maxX": 968.3053915823007,
+    "minZ": 884.5919999999026,
+    "maxZ": 2211.4799999999527
+   },
+   "riverLevel": 160.7,
+   "landmarks": [
+    {
+     "name": "Nanbin Park",
+     "x": 76.21935197743593,
+     "y": 202.57577959792386,
+     "z": 1226.6511332498635,
+     "ground": 162.57577959792386,
+     "height": 40.0,
+     "place": true,
+     "rank": 9
+    }
+   ],
+   "rides": []
+  }
+ },
+ "riverLevel": 160.7
+}
